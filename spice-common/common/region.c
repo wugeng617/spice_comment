@@ -300,55 +300,62 @@ int region_test(const QRegion *_reg1, const QRegion *_reg2, int query)
           一个或者多个区域为空或者他们不相交，注意是使用extents测试的
 		*/
 
-        if (pixman_region32_not_empty(reg1)) { //如果左边区域不空则左排除
+        if (pixman_region32_not_empty(reg1)) { //左区域不空，左排除
             res |= REGION_TEST_LEFT_EXCLUSIVE;
         }
 
-        if (pixman_region32_not_empty(reg2)) { //如果右边区域不空则右排除
+        if (pixman_region32_not_empty(reg2)) { //右区域不空，右排除
             res |= REGION_TEST_RIGHT_EXCLUSIVE;
         }
-		//两个区域都不空，则左右都排除
-		//如果两个区域都空，则两个标记都不会设置
 
+		// 左右区域都空，返回0
+		// 左空，右不空，可以认为右边包含左边，返回右排除
+		// 左不空，右空，可以认为左边包含右边，返回左排除
+		// 左右都不空，且外围矩形不相交，即两个区域独立，返回左右都排除
         return res & query;
+	// 下面情况下，左右区域一定不空，且至少外围矩形相交，但区域仍然有可能不相交，
+	// 为描述方便，记为条件A
+    } else if (!reg1->data && !reg2->data) { 
+    	//满足条件A，且左右区域都只有一个单矩形，也就是说单单两个矩形相交的情况
+        /* Just two rectangles that intersect */
+        res |= REGION_TEST_SHARED;
 
-	//以下部分表明，reg1和reg2都不空，但是大范围相交
-    } else if (!reg1->data && !reg2->data) { //都是单个矩形，extents是实际大小
-        /* Just two rectangles that intersect，两个单矩形相交*/
-		//两个单独的矩形相交，设置shared
-        res |= REGION_TEST_SHARED; 
-
-		//左边包含右边则没有右排除，右边包含左边则没有左排除，那边被包含则没有哪边的排除
-        if (!SUBSUMES(&reg1->extents, &reg2->extents)) { //左边包含右边则没有右排除
-            res |= REGION_TEST_RIGHT_EXCLUSIVE; //右排除
+		// 两个矩形相交，但是左边不包含有右边，设置右排除
+        if (!SUBSUMES(&reg1->extents, &reg2->extents)) {
+            res |= REGION_TEST_RIGHT_EXCLUSIVE;
         }
 
-        if (!SUBSUMES(&reg2->extents, &reg1->extents)) { //右边包含左边则没有左排除
-            res |= REGION_TEST_LEFT_EXCLUSIVE; //左排除
+		// 两个矩形相交，但是右边不包含左边，设置左排除
+        if (!SUBSUMES(&reg2->extents, &reg1->extents)) {
+            res |= REGION_TEST_LEFT_EXCLUSIVE;
         }
-		//如果左右互相包含则左右排除都没有只有SHARED
+
+		// 左右两个单矩形完全覆盖，只返回SHARED
+		// 左边区域包含右边区域，返回SHARED+左排除
+		// 右边区域包含左边区域，返回SHARED+右排除
+		// 左右区域只包含部分公共区域，返回shared+左右都排除
         return res & query;
+		//后面的代码的前置条件是，两个不空的外围相交区域，至少有个区域不是单矩形
     } else if (!reg2->data && SUBSUMES (&reg2->extents, &reg1->extents)) {
-		//如果右边的是单矩形，且右边包含左边的大范围（左边的一定是矩形集，且完全被右边包含），
-		//没有左排除, 也就是左边不用排除出了，因为已经被右边包含。此时左边一定是
-		//非单矩形，其extents范围一定大于其矩形集合的并集。
+		//右区域只是一个矩形，左区域不是单矩形区域，并且右区域矩形包含了整个左区域
         /* reg2 is just a rect that contains all of reg1 */
 
         res |= REGION_TEST_SHARED; /* some piece must be shared, because reg is not empty */
-        res |= REGION_TEST_RIGHT_EXCLUSIVE; /* reg2 contains all of reg1 and then some，右排除*/
-
+        res |= REGION_TEST_RIGHT_EXCLUSIVE; /* reg2 contains all of reg1 and then some */
+		// 返回SHARED+右排除
         return res & query;
     } else if (!reg1->data && SUBSUMES (&reg1->extents, &reg2->extents)) {
-		//如果左边的是单矩形，且左边包含右边边的大范围（右边的一定是矩形集，且完全被右边包含），
-		//没有右排除, 也就是左边不用排除出了，因为已经被右边包含
-        /* reg1 is just a rect that contains all of reg2， 左边包含右边，没有右排除 */
+		//左区域只是一个矩形，右区域不是单矩形区域，并且左区域矩形包含了整个右区域
+        /* reg1 is just a rect that contains all of reg2 */
 
         res |= REGION_TEST_SHARED; /* some piece must be shared, because reg is not empty */
         res |= REGION_TEST_LEFT_EXCLUSIVE; /* reg1 contains all of reg2 and then some */
-
+		// 返回SHARED+左排除
         return res & query;
-    } else if (reg1 == reg2) { //连个区域指针完全一样，左右都不用排除，仅仅共享
-        res |= REGION_TEST_SHARED;
+	//后续代码左右区域都不空，且两个区域外围矩形相交，且
+	//至少有一个非单矩形区域，如果有一个单矩形区域，单矩形区域无法包含另外一个区域的外围。
+    } else if (reg1 == reg2) {
+        res |= REGION_TEST_SHARED; //完全相等的情况下，只返回shared，没有排除信息
         return res & query;
     } else { //剩下的情况是两个区域相交，且
     	//1. 右边区域为单矩形，但是右边区域不能包括左边的大范围，一定不相等
@@ -419,6 +426,7 @@ void region_ret_rects(const QRegion *rgn, SpiceRect *rects, uint32_t num_rects)
     }
 }
 
+//获取QRegion的外围区域
 void region_extents(const QRegion *rgn, SpiceRect *r)
 {
     pixman_box32_t *extents;
@@ -448,10 +456,12 @@ int region_intersects(const QRegion *rgn1, const QRegion *rgn2)
     return !!test_res;
 }
 
+// 判断两个区域的外围矩形是否交叉
 int region_bounds_intersects(const QRegion *rgn1, const QRegion *rgn2)
 {
     pixman_box32_t *extents1, *extents2;
 
+	// 获取两个区域的外围矩形
     extents1 = pixman_region32_extents((pixman_region32_t *)rgn1);
     extents2 = pixman_region32_extents((pixman_region32_t *)rgn2);
 

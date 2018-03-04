@@ -842,6 +842,7 @@ void red_dispatcher_on_vm_start(void)
     }
 }
 
+//返回red_dispatcher的数量，同时也是显示通道的数量
 int red_dispatcher_count(void)
 {
     RedDispatcher *now = dispatchers;

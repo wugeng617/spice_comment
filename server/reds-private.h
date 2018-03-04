@@ -132,8 +132,8 @@ typedef struct RedsState {
     SpiceWatch *secure_listen_watch;
     VDIPortState agent_state;
     int pending_mouse_event;
-    Ring clients;
-    int num_clients;
+    Ring clients; //red_client列表
+    int num_clients; //记录客户端数量
     MainChannel *main_channel;
 
     int mig_wait_connect; /* src waits for clients to establish connection to dest
@@ -152,10 +152,10 @@ typedef struct RedsState {
     int num_mig_target_clients;
     RedsMigSpice *mig_spice;
 
-    int num_of_channels;
-    Ring channels;
-    int mouse_mode;
-    int is_client_mouse_allowed;
+    int num_of_channels; //记录下服务端的通道数量
+    Ring channels; //通道列表，也就是red_channel实例列表
+    int mouse_mode; //当前使用的鼠标模式
+    int is_client_mouse_allowed; //是否允许客户端端鼠标模式
     int dispatcher_allows_client_mouse;
     MonitorMode monitor_mode;
     SpiceTimer *mig_timer;

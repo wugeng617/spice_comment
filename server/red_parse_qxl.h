@@ -33,11 +33,12 @@ typedef struct RedDrawable {
 	//如DRAW_COPY的SPICE_ROPD_OP_PUT直接使用下面字段图像进行绘制
     SpiceRect self_bitmap_area; //命令本身的绘图区域
     SpiceImage *self_bitmap_image; //绘图命令本身包含一副图像
-    SpiceRect bbox; //绘制的目标矩形
-    SpiceClip clip; //对目标区域进行裁剪
+    SpiceRect bbox; //绘图的目标矩形，也就是外围矩形，可能被裁剪出一部分
+    SpiceClip clip; //裁剪区域，可能不裁剪，有裁剪区域，该区域表示剩余的区域
     uint32_t mm_time;
-    int32_t surfaces_dest[3];
-    SpiceRect surfaces_rects[3];
+	// 最多依赖三个surface
+    int32_t surfaces_dest[3]; //依赖的surface的id
+    SpiceRect surfaces_rects[3]; //依赖surface的哪个矩形区域
     union {
         SpiceFill fill;
         SpiceOpaque opaque;

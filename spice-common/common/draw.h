@@ -96,10 +96,10 @@ typedef struct SpicePalette { //跟QXLPalette一样
 
 typedef struct SpiceImageDescriptor {//跟QXLImageDescriptor一样
     uint64_t id; //图像id，包括组字段和唯一id，高32位unique, 低32位位组，用于缓存匹配
-    uint8_t type; //
-    uint8_t flags;
-    uint32_t width;
-    uint32_t height;
+    uint8_t type; //图像类型
+    uint8_t flags; //标记
+    uint32_t width; //宽
+    uint32_t height; //高
 } SpiceImageDescriptor;
 
 typedef struct SpiceBitmap {//跟QXLBitmap类似

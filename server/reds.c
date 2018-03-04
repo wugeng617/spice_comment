@@ -848,6 +848,7 @@ SPICE_GNUC_VISIBLE int spice_server_get_num_clients(SpiceServer *s)
 static int secondary_channels[] = {
     SPICE_CHANNEL_MAIN, SPICE_CHANNEL_DISPLAY, SPICE_CHANNEL_CURSOR, SPICE_CHANNEL_INPUTS};
 
+// 判断通道的类型是否在secondary通道列表中
 static int channel_is_secondary(RedChannel *channel)
 {
     int i;
@@ -859,20 +860,23 @@ static int channel_is_secondary(RedChannel *channel)
     return FALSE;
 }
 
+//将创建好的通道类型及其id填充到spice通道消息结构中
 void reds_fill_channels(SpiceMsgChannels *channels_info)
 {
     RingItem *now;
     int used_channels = 0;
 
+	//先设置成所有通道数
     channels_info->num_of_channels = reds->num_of_channels;
     RING_FOREACH(now, &reds->channels) {
         RedChannel *channel = SPICE_CONTAINEROF(now, RedChannel, link);
+		//VDI是单客户端，所以全取出来
         if (reds->num_clients > 1 && !channel_is_secondary(channel)) {
             continue;
         }
         channels_info->channels[used_channels].type = channel->type;
         channels_info->channels[used_channels].id = channel->id;
-        used_channels++;
+        used_channels++; //设置一个增加一个
     }
 
     channels_info->num_of_channels = used_channels;
@@ -1601,10 +1605,12 @@ static void reds_handle_main_link(RedLinkInfo *link)
     }
 
     if (!mig_target) {
+		// 先发送init消息
         main_channel_push_init(mcc, red_dispatcher_count(),
             reds->mouse_mode, reds->is_client_mouse_allowed,
             reds_get_mm_time() - MM_TIME_DELTA,
             red_dispatcher_qxl_ram_size());
+		//如果有名字和uuid，且客户端支持名字和uuid，发送spice名称和uuid消息
         if (spice_name)
             main_channel_push_name(mcc, spice_name);
         if (spice_uuid_is_set)
@@ -1612,6 +1618,7 @@ static void reds_handle_main_link(RedLinkInfo *link)
     } else {
         reds_mig_target_client_add(client);
     }
+	//开始主通道的网络测试
     main_channel_client_start_net_test(mcc, !mig_target);
 }
 

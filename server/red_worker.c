@@ -532,8 +532,8 @@ typedef struct StreamAgent {
 typedef struct StreamClipItem { //流裁剪
     PipeItem base; //管道项
     int refs; //引用计数
-    StreamAgent *stream_agent; //流代理,每创建一个StreamClipItem都会Stream加个引用
-    int clip_type; //裁剪类型
+    StreamAgent *stream_agent; ////哪个流代理触发的流裁剪管道项, 每创建一个StreamClipItem都会Stream加个引用
+    int clip_type; // 裁剪类型：矩形裁剪或者不裁剪
     SpiceClipRects *rects; //裁剪区域，矩形集合，裁剪矩形集合从StreamAgent的Clip中获取
 } StreamClipItem;
 
@@ -910,7 +910,7 @@ struct Drawable {
     DependItem pipe_depend_items[3];
 
     int surface_id; //目标surface
-    int surfaces_dest[3]; //依赖surface，一个渲染命令最多跟另外三个surface相关（上、中、下？）
+    int surfaces_dest[3]; //依赖的其他surface的id
 
     uint32_t process_commands_generation;
 };
@@ -943,7 +943,7 @@ typedef struct UpgradeItem {
 //画图上下文
 typedef struct DrawContext {
     SpiceCanvas *canvas; //Spice画布
-    int canvas_draws_on_surface; //
+    int canvas_draws_on_surface; //SW画布为true，其余类型画布FALSE
     int top_down; //渲染方向，跟stride的正负相关
     uint32_t width; //宽
     uint32_t height; //高
@@ -952,10 +952,10 @@ typedef struct DrawContext {
     void *line_0; //渲染内存地址
 } DrawContext;
 
-// RedSurface可以理解为画布
+// RedSurface, 表示显示的一个图层，VDI里只使用0号表面，
 typedef struct RedSurface {
     uint32_t refs; //引用计数，一个Drawable只要存活就会对RedSurface持有引用
-    Ring current; //命令树
+    Ring current;  //命令树的根节点孩子链表，由各种treeitem组成
     Ring current_list; //Drawable的surface_list_link链表，包含本surface的所有命令
 #ifdef ACYCLIC_SURFACE_DEBUG
     int current_gn;
@@ -963,7 +963,7 @@ typedef struct RedSurface {
     DrawContext context; //画布绘画上下文
 
     Ring depend_on_me; //依赖关系列表，代表着一系列依赖本surface的命令列表
-    QRegion draw_dirty_region; //脏域
+    QRegion draw_dirty_region; //surface的脏区域
 
     //fix me - better handling here
     QXLReleaseInfoExt create, destroy; //记录create和destroy时的QXL相关信息
@@ -1002,25 +1002,25 @@ typedef struct RedWorker {
     uint32_t repoll_cmd_ring;
     uint32_t repoll_cursor_ring;
     uint32_t num_renderers;
-    uint32_t renderers[RED_MAX_RENDERERS];
-    uint32_t renderer; //定义显示通道的渲染方式，一般为SW渲染
+    uint32_t renderers[RED_MAX_RENDERERS]; //各个surface的渲染方式可以不一致
+    uint32_t renderer; //定义显示通道的同意渲染方式，一般为SW渲染，-1表示没有定义，如果此值有效则上面的值无效
 
-    RedSurface surfaces[NUM_SURFACES];
-    uint32_t n_surfaces;
-    SpiceImageSurfaces image_surfaces;
+    RedSurface surfaces[NUM_SURFACES]; //所有redsurface的数组
+    uint32_t n_surfaces; //实际有效的surface数量
+    SpiceImageSurfaces image_surfaces; 
 
     MonitorsConfig *monitors_config;
 
     Ring current_list; //Drawable的list_link链表，包含了所有surface的所有命令
-    uint32_t current_size; //本显示通道的命令数
-    uint32_t drawable_count; //已经处理过的drawable数量
-    uint32_t red_drawable_count; //通过的red_drawable数量
-    uint32_t glz_drawable_count;
-    uint32_t transparent_count;
+    uint32_t current_size; // 当前命令计数，会增加，会递减
+    uint32_t drawable_count; //drawable计数
+    uint32_t red_drawable_count; //red_drawable计数
+    uint32_t glz_drawable_count; //glz压缩的drawable计数
+    uint32_t transparent_count; //透明命令计数
 
-    uint32_t shadows_count; //worker里Shadow节点的个数
-    uint32_t containers_count;
-    uint32_t stream_count;
+    uint32_t shadows_count; //所有命令树中的Shadow节点计数
+    uint32_t containers_count; //所有命令树中的容器节点计数
+    uint32_t stream_count; //流计数
 
     uint32_t bits_unique; //BIT唯一值
 
@@ -1042,8 +1042,8 @@ typedef struct RedWorker {
 
     ImageCache image_cache; //图像缓存
 
-    spice_image_compression_t image_compression;
-    spice_wan_compression_t jpeg_state;
+    spice_image_compression_t image_compression; //图像压缩类型
+    spice_wan_compression_t jpeg_state; 
     spice_wan_compression_t zlib_glz_state;
 
     uint32_t mouse_mode;
@@ -1077,7 +1077,7 @@ typedef struct RedWorker {
     stat_info_t exclude_stat;
     stat_info_t __exclude_stat;
     uint32_t add_count;
-    uint32_t add_with_shadow_count; //有shadows的命令数
+    uint32_t add_with_shadow_count;
 #endif
 #ifdef RED_STATISTICS
     StatNodeRef stat;
@@ -1590,7 +1590,7 @@ static inline void red_pipes_add_drawable_after(RedWorker *worker,
         WORKER_FOREACH_DCC_SAFE(worker, worker_item, next, dcc) {
             int sent = 0;
             DRAWABLE_FOREACH_DPI_SAFE(pos_after, dpi_link, dpi_next, dpi_pos_after) {
-                if (dpi_pos_after->dcc == dcc) {·
+                if (dpi_pos_after->dcc == dcc) {
                     sent = 1;
                     break;
                 }
@@ -1770,6 +1770,7 @@ static inline void red_destroy_surface_item(RedWorker *worker,
     red_channel_client_pipe_add(&dcc->common.base, &destroy->pipe_item);
 }
 
+// 解除对目标redsurface的引用，如果引用计数为0，则销毁redsurface
 static inline void red_destroy_surface(RedWorker *worker, uint32_t surface_id)
 {
     RedSurface *surface = &worker->surfaces[surface_id];
@@ -1840,6 +1841,7 @@ static inline void put_red_drawable(RedWorker *worker, RedDrawable *red_drawable
     free(red_drawable);
 }
 
+// 重置依赖关系实体，即删除依赖关系
 static void remove_depended_item(DependItem *item)
 {
     spice_assert(item->drawable);
@@ -1848,7 +1850,9 @@ static void remove_depended_item(DependItem *item)
     ring_remove(&item->ring_item);
 }
 
-static inline void red_dec_surfaces_drawable_dependencies(RedWorker *worker, Drawable *drawable)
+// 解除drawable对象对其依赖的redsurface的引用关系
+static inline void 
+red_dec_surfaces_drawable_dependencies(RedWorker *worker, Drawable *drawable)
 {
     int x;
     int surface_id;
@@ -1858,10 +1862,12 @@ static inline void red_dec_surfaces_drawable_dependencies(RedWorker *worker, Dra
         if (surface_id == -1) {
             continue;
         }
+		//对依赖的surface减引用
         red_destroy_surface(worker, surface_id);
     }
 }
 
+// 移除drawable对象的所有depend_on_me依赖关系
 static void remove_drawable_dependencies(RedWorker *worker, Drawable *drawable)
 {
     int x;
@@ -1875,34 +1881,50 @@ static void remove_drawable_dependencies(RedWorker *worker, Drawable *drawable)
     }
 }
 
+// 释放Drawable对象的引用，如果引用为0，则释放
 static inline void release_drawable(RedWorker *worker, Drawable *drawable)
 {
     RingItem *item, *next;
 
     if (!--drawable->refs) {
+		// 引用计数为0时，drawable的命令树节点必然没有shadow
+		// 而且从所有发送管道中摘除了，或者没有加入到发送管道
         spice_assert(!drawable->tree_item.shadow);
-        spice_assert(ring_is_empty(&drawable->pipes));
+        spice_assert(ring_is_empty(&drawable->pipes)); 
 
-        if (drawable->stream) {
+        if (drawable->stream) { //关联了流，解除流关联
             red_detach_stream(worker, drawable->stream, TRUE);
         }
+		
+		// 销毁命令树节点的rgn对象
         region_destroy(&drawable->tree_item.base.rgn);
 
+		// 干掉drawable依赖关系
         remove_drawable_dependencies(worker, drawable);
+		
+		// 释放drawable时才解除对依赖surface的引用
         red_dec_surfaces_drawable_dependencies(worker, drawable);
+		
+		// 解除对目标surface的引用
         red_destroy_surface(worker, drawable->surface_id);
 
+		// 解除RedGlzDrawable跟drawable的关联
         RING_FOREACH_SAFE(item, next, &drawable->glz_ring) {
             SPICE_CONTAINEROF(item, RedGlzDrawable, drawable_link)->drawable = NULL;
             ring_remove(item);
         }
+		// 释放red_drawable
         put_red_drawable(worker, drawable->red_drawable, drawable->group_id);
+		// 归还Drawable内存池
         free_drawable(worker, drawable);
+		// 更新red_worker的命令计数
         worker->drawable_count--;
     }
 }
 
-//从命令树中删除指定的shadow
+/* 把命令树Draw节点的shadow从命令树中摘除并干掉，shadow被改掉后，
+   该命令树draw节点的shadow指针指向NULL，如果该命令树draw节点没有shadow则直接返回。
+*/
 static inline void remove_shadow(RedWorker *worker, DrawItem *item)
 {
     Shadow *shadow;
@@ -1914,71 +1936,73 @@ static inline void remove_shadow(RedWorker *worker, DrawItem *item)
     item->shadow = NULL; //取消shadow关联
     ring_remove(&shadow->base.siblings_link); //将shadow从兄弟节点中摘除
     region_destroy(&shadow->base.rgn); //干掉shadow的区域
+	//没有处理shadow->base.container，说明shadow的treeitem没有container节点
     region_destroy(&shadow->on_hold); //干掉shadow的on_hold
     free(shadow); //释放shadow节点
     worker->shadows_count--; //shadow计数递减
 }
 
-//从命令树中删除指定的Contianer
+// 从命令树种移除container，要求container节点没有孩子节点了
 static inline void current_remove_container(RedWorker *worker, Container *container)
 {	
 	//container所有的孩子节点都摘除了后才能删除
     spice_assert(ring_is_empty(&container->items));
+	//更新redworker的container计数
     worker->containers_count--;
-	//删除container
+	//container节点移出命令树
     ring_remove(&container->base.siblings_link);
-	//释放区域
+	//销毁container的rgn
     region_destroy(&container->base.rgn);
-	//释放container
+	//释放container内存
     free(container);
 }
 
-//清理worker中的container
-//container只包含一个子节点或者没有子节点才能清理
+// 如果container只有一个孩子节点，或者没有孩子节点，则对container节点进行清理，
+// 如果container只有一个孩子，则孩子替代container的位置，然后container被销毁，
+// 如果container没有孩子，则直接删除container。
+// 该过程会对container的祖先进行判断，直到上面的条件不满足时退出。
 static inline void container_cleanup(RedWorker *worker, Container *container)
 {
-	//支持container为空的情况
-	//当container指针不空且container->items.next == container->items.prev有两种情况:
-	// a. container只有一个孩子，此时这两个指针都指向唯一的孩子，a情况直接删除container
-	// b. container没有孩子，此时这两个指针都指向container->items的地址
+	// 如果container为真，且container只有一个孩子节点，或者没有孩子节点
     while (container && container->items.next == container->items.prev) {
-        Container *next = container->base.container; //父节点
-        if (container->items.next != &container->items) { //a情况，
-			//取container的唯一孩子
+		//container指向父节点
+        Container *next = container->base.container;
+		// 如果container的还有一个孩子节点
+        if (container->items.next != &container->items) {
+			//取出孩子节点
             TreeItem *item = (TreeItem *)ring_get_head(&container->items);
             spice_assert(item);
-            ring_remove(&item->siblings_link);//从container中干掉
-            //添加到container这一级的兄弟链表中，层次上升了，
-            //因为后面还会调用current_remove_container，会干掉container->base.siblings_link
-            //所以，实际效果就是item顶替了container
+            ring_remove(&item->siblings_link); //孩子节点从container的items链表摘除
+            //此时，container没有孩子节点了，孩子节点要取代container在container兄弟链表
+            //中的位置，所以先将孩子节点插入到container的当前位置，后面current_remove_container
+            //会将container从next的孩子链表中删除，从而达到取代位置的效果
             ring_add_after(&item->siblings_link, &container->base.siblings_link);
-			//调制item父节点为Container的父节点
-            item->container = container->base.container;
+            item->container = container->base.container; //更新item的父节点
         }
+		//移除container
         current_remove_container(worker, container);
         container = next;
     }
 }
 
-/* 根据Drawable创建绘图指令跟踪 */
+/* 根据Drawable创建流跟踪项 */
 static inline void red_add_item_trace(RedWorker *worker, Drawable *item)
 {
     ItemTrace *trace;
-    if (!item->streamable) { //不可以图像流处理
-    	//不用跟踪
+    if (!item->streamable) {//绘图命令不具备成流的条件，不用创建跟踪项
         return;
     }
 
 	//取得跟踪项，循环跟踪，最多跟踪8个Drawcopy渲染命令
     trace = &worker->items_trace[worker->next_item_trace++ & ITEMS_TRACE_MASK];
-    trace->time = item->creation_time; //复制渲染指令到达时间
-    trace->frames_count = item->frames_count; //复制在流中的序号
+    trace->time = item->creation_time; //复制绘图指令到达时间
+    trace->frames_count = item->frames_count; //复制帧序号
     trace->gradual_frames_count = item->gradual_frames_count; //复制gradual序号
     trace->last_gradual_frame = item->last_gradual_frame;//最后一个gradual序号
-    SpiceRect* src_area = &item->red_drawable->u.copy.src_area; //源矩形
-    trace->width = src_area->right - src_area->left; //计算流跟踪宽
-    trace->height = src_area->bottom - src_area->top; //计算流跟踪高
-    trace->dest_area = item->red_drawable->bbox; //目标显示区域
+    SpiceRect* src_area = &item->red_drawable->u.copy.src_area; //源矩形，源矩形可能跟目标矩形大小不一致，因为有scale的情况
+    trace->width = src_area->right - src_area->left; //跟踪项的宽是源矩形的宽
+    trace->height = src_area->bottom - src_area->top; //跟踪项的高是源矩形的高
+    trace->dest_area = item->red_drawable->bbox; //流跟踪的目标区域取bbox矩形
 }
 
 static void surface_flush(RedWorker *worker, int surface_id, SpiceRect *rect)
@@ -1986,7 +2010,7 @@ static void surface_flush(RedWorker *worker, int surface_id, SpiceRect *rect)
     red_update_area(worker, rect, surface_id);
 }
 
-// 刷新Drawable依赖的源surface, 并且解除该命令与surfaces之间的依赖关系
+/* 刷新drawable的依赖surface的依赖区域 */
 static void red_flush_source_surfaces(RedWorker *worker, Drawable *drawable)
 {
     int x;
@@ -2001,7 +2025,9 @@ static void red_flush_source_surfaces(RedWorker *worker, Drawable *drawable)
     }
 }
 
-// 将Drawable从RedWorker中current链表删除
+// 将一个drawable从命令树、redworker、surface中摘除
+// 如果drawable是copybits,还会删除其shadow节点
+// 摘除时会触发流跟踪
 static inline void current_remove_drawable(RedWorker *worker, Drawable *item)
 {
     if (item->tree_item.effect != QXL_EFFECT_OPAQUE) {
@@ -2013,64 +2039,84 @@ static inline void current_remove_drawable(RedWorker *worker, Drawable *item)
     	//因为删除渲染命令，很可能是因为渲染命令完全被覆盖了。符合流的特性
         red_add_item_trace(worker, item);
     }
-    remove_shadow(worker, &item->tree_item); //删除其shadow节点
-    //将节点从兄弟链表中摘除
-    ring_remove(&item->tree_item.base.siblings_link); 
-    ring_remove(&item->list_link);//从RedWorker的current_list中摘除
-    ring_remove(&item->surface_list_link);//从RedSurface的current_list中摘除
-    release_drawable(worker, item);//释放Drawable，可能还不会真正释放
-    worker->current_size--; //Current_size递减
+	//移除掉绘图命令的shadow
+    remove_shadow(worker, &item->tree_item);
+	//绘图命令从命令树摘除
+    ring_remove(&item->tree_item.base.siblings_link);
+	//从redworker的命令列表中摘除
+    ring_remove(&item->list_link);
+	//从redsurface的命令列表中摘除
+    ring_remove(&item->surface_list_link);
+	//从命令树中摘除，释放Drawable对象引用计数，当然也可能触发Drawable的释放
+    release_drawable(worker, item);
+	//更新redworker的绘图命令计数
+    worker->current_size--;
 }
 
+// 从命令管道和命令树种移除drawable
 static void remove_drawable(RedWorker *worker, Drawable *drawable)
 {
+	//从发送管道中摘除drawable
     red_pipes_remove_drawable(drawable);
+	//从命令树种摘除drawable
     current_remove_drawable(worker, drawable);
 }
 
+// 将TreeItem节点及其子节点从命令树和发送管道中摘除，可能触发对应drawable的释放。
+// treeitem只能是DRAWABLE和container类型，如果是container类型，要求其子孙节点中没有
+// shadow节点了。
 static inline void current_remove(RedWorker *worker, TreeItem *item)
 {
     TreeItem *now = item;
 
     for (;;) {
-        Container *container = now->container;
+        Container *container = now->container; //记下父节点
         RingItem *ring_item;
 
         if (now->type == TREE_ITEM_TYPE_DRAWABLE) {
-            ring_item = now->siblings_link.prev;
+            ring_item = now->siblings_link.prev; //记下命令树的前一个节点
             remove_drawable(worker, SPICE_CONTAINEROF(now, Drawable, tree_item));
         } else {
+			//item不可能是shadow？这里直接转成Container了
             Container *container = (Container *)now;
 
             spice_assert(now->type == TREE_ITEM_TYPE_CONTAINER);
 
+			//取container的第一个孩子节点，转到第一个
             if ((ring_item = ring_get_head(&container->items))) {
                 now = SPICE_CONTAINEROF(ring_item, TreeItem, siblings_link);
                 continue;
             }
+			//如果container没有孩子节点，移除container
             ring_item = now->siblings_link.prev;
             current_remove_container(worker, container);
         }
-        if (now == item) {
+
+        if (now == item) { //item节点及其所有字节点都remove完毕，返回
             return;
         }
 
+		// 因为是ring_next，所以，兄弟节点是从
         if ((ring_item = ring_next(&container->items, ring_item))) {
             now = SPICE_CONTAINEROF(ring_item, TreeItem, siblings_link);
         } else {
-            now = (TreeItem *)container;
+            now = (TreeItem *)container; //本层已经全部删除，往上回溯，
+            //此时的container的孩子已经全部删除，可以删除container了
         }
     }
 }
 
+// 
 static void current_tree_for_each(Ring *ring, void (*f)(TreeItem *, void *), void * data)
 {
     RingItem *ring_item;
     Ring *top_ring;
-
+	
+	// current_tree 命令树为空
     if (!(ring_item = ring_get_head(ring))) {
         return;
     }
+	// 顶层列表
     top_ring = ring;
 
     for (;;) {
@@ -2297,22 +2343,28 @@ static void show_current(RedWorker *worker, Ring *ring)
 
 static inline Shadow *__find_shadow(TreeItem *item)
 {
+	// 迭代container的子孙中，最后一个非container节点
     while (item->type == TREE_ITEM_TYPE_CONTAINER) {
-		//取item孩子节点的最后一个节点的命令树节点指针
+		// 取container的孩子节点的最后一个节点。如果container孩子为空，返回空
         if (!(item = (TreeItem *)ring_get_tail(&((Container *)item)->items))) {
-		//如果container是空链表返回NULL.
+			//如果container是空链表返回NULL.
             return NULL;
         }
     }
-	//最后一个节点不是DRAWABLE返回NULL
+
+	// 如果最后一个节点不是drawable(到这一行，item也一定不是container)
+	// 即item是shadow，返回NULL
     if (item->type != TREE_ITEM_TYPE_DRAWABLE) {
         return NULL;
     }
-	//找回shadow
+
+	// 返回最后一个Drawable的shadow指针，（不确定是否一定为真）
     return ((DrawItem *)item)->shadow;
 }
 
-// 返回item所在的兄弟链表，如果item没有父节点了，则返回候选链表ring
+/* 如果item有container（父节点），返回item所在的兄弟链表，
+ * 如果item没有container（父节点）了，则返回ring参数
+ */
 static inline Ring *ring_of(RedWorker *worker, Ring *ring, TreeItem *item)
 {
     return (item->container) ? &item->container->items : ring;
@@ -2322,17 +2374,19 @@ static inline Ring *ring_of(RedWorker *worker, Ring *ring, TreeItem *item)
 static inline int __contained_by(RedWorker *worker, TreeItem *item, Ring *ring)
 {
     spice_assert(item && ring);
-	/* 1. item 没有父节点，直接返回true	*/
+	/* 1. item 没有父节点，直接返回true */
     do {
-		
+		// 如果item没有父节点了，ring_of返回ring，则now必然等于ring，函数返回true
+		// 如果item有父节点，判断item所在的链表是否是ring，如果是返回true，如果不是
+		// item变成item的节点，继续迭代
         Ring *now = ring_of(worker, ring, item);
         if (now == ring) {
             return TRUE;
         }
-		//now和ring不同，也就是item所在兄弟链表不是ring
-		//尝试item的父节点。如果父节点
+		// 迭代item的祖先节点，直到找到ring == item或者root节点
     } while ((item = (TreeItem *)item->container));
-
+	
+	// 如果item有父节点，但是其祖先都不是ring, 返回false。
     return FALSE;
 }
 
@@ -2513,43 +2567,49 @@ static inline Container *__new_container(RedWorker *worker, DrawItem *item)
     container->base.container = item->base.container; //container的contianer从子节点继承
     item->base.container = container;//更新叶子节点的container为新创建的界定啊
     item->container_root = TRUE; //叶子的container_root设置为真，表示是container的原生叶子
+	//容器节点的区域和drawitem的区域一致
     region_clone(&container->base.rgn, &item->base.rgn); //复制目标区域
-    //将新建的container链入item所属的兄弟节点链表，并删除自身，效果就是
-    //用container来替换DrawItem
+	//container替代drawitem的兄弟先后关系
     ring_item_init(&container->base.siblings_link);
-	//将container的sibling_link，添加到item的sibling_link后，然后删除item则替换了
-	//item的位置，不会造成添加的先后关系变化
+	//先把container的sibling_link添加到drawitem的sibling_link之后，然后
+	//将drawitem的sibling_link从兄弟节点中摘除，这样，container就替代了drawitem的位置了
     ring_add_after(&container->base.siblings_link, &item->base.siblings_link);
     ring_remove(&item->base.siblings_link);
-	//添加item到container的孩子链表中
+	//初始化容器的孩子节点链表
     ring_init(&container->items);
+	//drawitem成为container的第一个孩子节点
     ring_add(&container->items, &item->base.siblings_link);
 
     return container;
 }
 
+// 判断一个命令树节点是否为非透明节点
+// 1. container节点是非透明的，
+// 2. OPAQUE特效的drawitem也是非透明的
 static inline int is_opaque_item(TreeItem *item)
 {
     return item->type == TREE_ITEM_TYPE_CONTAINER ||
            (IS_DRAW_ITEM(item) && ((DrawItem *)item)->effect == QXL_EFFECT_OPAQUE);
 }
 
-//将drawable嵌入命令树中，pos是添加位置
-static inline void __current_add_drawable(RedWorker *worker, Drawable *drawable, RingItem *pos)
+//将drawable添加到命令树的pos位置之后，同时将drawable的接入到
+//redworker的current_list的链表头部，将drawable的surface_list_link添加到redsurface的
+//current_list链表头部
+static inline void 
+__current_add_drawable(RedWorker *worker, Drawable *drawable, RingItem *pos)
 {
     RedSurface *surface;
     uint32_t surface_id = drawable->surface_id;
 
     surface = &worker->surfaces[surface_id];
-	//将drawable的tree_item的兄弟节点，添加到pos后面
+	//drawable嵌入到命令树的pos位置之后
     ring_add_after(&drawable->tree_item.base.siblings_link, pos);
-	//将drawable连接到worker的current链表
+	//drawable分别添加到redworker和surface的对应链表头部
     ring_add(&worker->current_list, &drawable->list_link);
-	//接入到画布
     ring_add(&surface->current_list, &drawable->surface_list_link);
-	//增加计数
+	//增加redworker的命令计数
     worker->current_size++;
-	//命令数中所有节点都持有对命令的引用
+	//添加到命令树中，增加引用
     drawable->refs++;
 }
 
@@ -2655,7 +2715,8 @@ static void red_release_stream(RedWorker *worker, Stream *stream)
 
 // 将Stream的当前渲染命令与Stream取消关联，并将流的当前命令清空
 // detach_sized控制是否干掉流当前命令的sized_stream关联
-static inline void red_detach_stream(RedWorker *worker, Stream *stream, int detach_sized)
+static inline void 
+red_detach_stream(RedWorker *worker, Stream *stream, int detach_sized)
 {
     spice_assert(stream->current && stream->current->stream);
     spice_assert(stream->current->stream == stream);
@@ -2666,21 +2727,20 @@ static inline void red_detach_stream(RedWorker *worker, Stream *stream, int deta
     stream->current = NULL;
 }
 
-//为agent创建流裁剪管道项
+// 创建一个流裁剪管道项
 static StreamClipItem *__new_stream_clip(DisplayChannelClient* dcc, StreamAgent *agent)
 {
     StreamClipItem *item = spice_new(StreamClipItem, 1);
-	//
     red_channel_pipe_item_init(dcc->common.base.channel,
                     (PipeItem *)item, PIPE_ITEM_TYPE_STREAM_CLIP);
 
-    item->stream_agent = agent;
-    agent->stream->refs++;
-    item->refs = 1;
+    item->stream_agent = agent; //设置流代理对象指针
+    agent->stream->refs++; //对流增加引用计数
+    item->refs = 1; //流裁剪管道项引用计数设置为1
     return item;
 }
 
-// 推入流裁剪管道命令
+// 向DCC中推送一个流裁剪命令管道命令
 static void push_stream_clip(DisplayChannelClient* dcc, StreamAgent *agent)
 {
     StreamClipItem *item = __new_stream_clip(dcc, agent);
@@ -2695,9 +2755,9 @@ static void push_stream_clip(DisplayChannelClient* dcc, StreamAgent *agent)
 
     item->rects = spice_malloc_n_m(n_rects, sizeof(SpiceRect), sizeof(SpiceClipRects));
     item->rects->num_rects = n_rects;
-	//复制矩形集
+	//裁剪QRegion转成SpiceRect数组
     region_ret_rects(&agent->clip, item->rects->rects, n_rects);
-	//压入管道命令
+	//传入流裁剪管道项
     red_channel_client_pipe_add(&dcc->common.base, (PipeItem *)item);
 }
 
@@ -2856,18 +2916,20 @@ static inline void red_display_detach_stream_gracefully(DisplayChannelClient *dc
     int stream_id = get_stream_id(dcc->common.worker, stream);
     StreamAgent *agent = &dcc->stream_agents[stream_id]; //stream在dcc中的代理
 
-    /* stopping the client from playing older frames at once
-       让dcc停止显示流的帧
-	*/
-    region_clear(&agent->clip); //清空裁剪区域，并发送流裁剪命令
-    push_stream_clip(dcc, agent); //此时clip区域被清空，也就裁剪区域为0，也就是全干掉了，不显示流帧
+    /* stopping the client from playing older frames at once*/
+	// 马上通知客户端不要播放老的帧
+	// 清空流代理的裁剪区域，也就是说裁剪区域变成0了，也就是流没有显示区域了。
+	// 并且让客户端对流进行重新裁剪，从而达到让客户端停止播放老帧的目的
+    region_clear(&agent->clip);
+    push_stream_clip(dcc, agent);
 
-	// 如果流没有可视区域，直接返回
-    if (region_is_empty(&agent->vis_region)) { //没有可视区域
+	// 如果流代理的可视区域为空，那么不用处理了
+    if (region_is_empty(&agent->vis_region)) {
         spice_debug("stream %d: vis region empty", stream_id);
         return;
     }
 
+	// 如果流的最后一条显示命令不空且最后一条命令包含了流代理的可视区域
     if (stream->current &&
         region_contains(&stream->current->tree_item.base.rgn, &agent->vis_region)) {
         //如果流当前有帧，且当前帧覆盖了显示区域的全部.
@@ -2967,7 +3029,9 @@ static void red_detach_streams_behind(RedWorker *worker, QRegion *region, Drawab
         int detach_stream = 0;
         item = ring_next(ring, item);
 
+		//迭代所有dcc
         WORKER_FOREACH_DCC_SAFE(worker, dcc_ring_item, next, dcc) {
+        	//找到dcc上的流代理
             StreamAgent *agent = &dcc->stream_agents[get_stream_id(worker, stream)];
 
             if (region_intersects(&agent->vis_region, region)) { //与流可视区域相交
@@ -3706,8 +3770,10 @@ static inline int is_drawable_independent_from_surfaces(Drawable *drawable)
     return TRUE;
 }
 
-// 当显示将item添加到命令树，item和命令树中的CONTAINER或者DRAWABLE节点完全相同
-// other是命令树中区域相同的节点，失败返回false，成功返回true
+/* 将绘图命令树节点添加到命令树，绘图命令区域跟比较节点的区域完全一致
+   item是待添加节点，other是命令树中比较节点，它跟item的目标区域完全一致
+   成功返回TRUE，添加失败返回false
+*/
 static inline int red_current_add_equal(RedWorker *worker, DrawItem *item, TreeItem *other)
 {
     DrawItem *other_draw_item;
@@ -3910,9 +3976,9 @@ static inline int red_current_add(RedWorker *worker, Ring *ring, Drawable *drawa
 #ifdef RED_WORKER_STAT
     stat_time_t start_time = stat_now();
 #endif
-    RingItem *now;
-    QRegion exclude_rgn;
-    RingItem *exclude_base = NULL;
+    RingItem *now; //当前迭代的命令树节点
+    QRegion exclude_rgn; //排除区域
+    RingItem *exclude_base = NULL; //排除基础
 
     print_base_item("ADD", &item->base);
     spice_assert(!region_is_empty(&item->base.rgn));
@@ -3924,23 +3990,27 @@ static inline int red_current_add(RedWorker *worker, Ring *ring, Drawable *drawa
         TreeItem *sibling = SPICE_CONTAINEROF(now, TreeItem, siblings_link);
         int test_res;
 
-		// 区域的外围矩形都不相交，不用处理此节点
+		// 如果当前drawable的目标区域与跟比较节点的目标区域的外围矩形不相交，
+		// 那不用继续比较了，直接比较链表中下一个节点
         if (!region_bounds_intersects(&item->base.rgn, &sibling->rgn)) {
             print_base_item("EMPTY", sibling);
             now = ring_next(ring, now);
             continue;
         }
-		// 外围矩形存在相交的情况，进行测试
+		// 外围矩形相交的情况下，将drawable的区域跟比较节点进行详细测试，
+		// item是左区域，sibling是右区域
         test_res = region_test(&item->base.rgn, &sibling->rgn, REGION_TEST_ALL);
-		//不相交，跳过节点
+		// 如果区域没有相交，继续比较后续节点
         if (!(test_res & REGION_TEST_SHARED)) {
             print_base_item("EMPTY", sibling);
             now = ring_next(ring, now);
             continue;
-		//相交且命令树节点不是SHADOW，是DrawItem或者Container
-        } else if (sibling->type != TREE_ITEM_TYPE_SHADOW) 
-		{
-			//找到一个区域完全一样的命令，走相同区域命令树添加流程
+		// 以下代码表示item和比较节点区域相交
+        } else if (sibling->type != TREE_ITEM_TYPE_SHADOW) {
+        //如果比较节点不是shadow节点，是container或者drawitem节点
+
+			// 区域完全相等时test_res只设置了shared标记，且没有左排除和右排除标记。
+			// 调用red_current_add_equal尝试走等区域流程，成功直接返回，失败继续走下面的流程
             if (!(test_res & REGION_TEST_RIGHT_EXCLUSIVE) &&
 				!(test_res & REGION_TEST_LEFT_EXCLUSIVE) &&
 				red_current_add_equal(worker, item, sibling)) //sibling是container时返回false
@@ -3949,12 +4019,13 @@ static inline int red_current_add(RedWorker *worker, Ring *ring, Drawable *drawa
                 return FALSE;
             }
 
+			// sibling没有完全包含item区域，而且item是非透明绘图命令
             if (!(test_res & REGION_TEST_RIGHT_EXCLUSIVE) && item->effect == QXL_EFFECT_OPAQUE) {
                 Shadow *shadow;
-                int skip = now == exclude_base;
+                int skip = now == exclude_base; //now == exclude_base是否相同
                 print_base_item("CONTAIN", sibling);
 
-                if ((shadow = __find_shadow(sibling))) {
+                if ((shadow = __find_shadow(sibling))) { //sibling的最老子孙有shadow
                     if (exclude_base) {
                         TreeItem *next = sibling;
                         exclude_region(worker, ring, exclude_base, &exclude_rgn, &next, NULL);
@@ -3966,8 +4037,8 @@ static inline int red_current_add(RedWorker *worker, Ring *ring, Drawable *drawa
                     }
                     region_or(&exclude_rgn, &shadow->on_hold);
                 }
-                now = now->prev;
-                current_remove(worker, sibling);
+                now = now->prev; //往前找
+                current_remove(worker, sibling); //将sibling及其子孙从命令树移除
                 now = ring_next(ring, now);
                 if (shadow || skip) {
                     exclude_base = now;
@@ -3992,15 +4063,16 @@ static inline int red_current_add(RedWorker *worker, Ring *ring, Drawable *drawa
                     continue;
                 }
                 spice_assert(IS_DRAW_ITEM(sibling));
-                if (!((DrawItem *)sibling)->container_root) {
-                    container = __new_container(worker, (DrawItem *)sibling);
-                    if (!container) {
+                if (!((DrawItem *)sibling)->container_root) {//如果不是容器的根节点（第一个节点）
+                	// 以sibling绘图节点创建一个容器节点
+                    container = __new_container(worker, (DrawItem *)sibling); 
+                    if (!container) { //创建失败，从代码来看不会失败，无效代码
                         spice_warning("create new container failed");
                         region_destroy(&exclude_rgn);
                         return FALSE;
                     }
                     item->base.container = container;
-                    ring = &container->items;
+                    ring = &container->items; //
                 }
             }
         }
@@ -4009,7 +4081,7 @@ static inline int red_current_add(RedWorker *worker, Ring *ring, Drawable *drawa
         }
         break;
     }
-    if (item->effect == QXL_EFFECT_OPAQUE) {
+    if (item->effect == QXL_EFFECT_OPAQUE) { //当前是非透明命令
         region_or(&exclude_rgn, &item->base.rgn);
         exclude_region(worker, ring, exclude_base, &exclude_rgn, NULL, drawable);
         red_use_stream_trace(worker, drawable);
@@ -4045,34 +4117,36 @@ static void add_clip_rects(QRegion *rgn, SpiceClipRects *data)
     }
 }
 
-/* 为copybits命令item创建shadow */
+//创建一个命令树shadow，创建者是item，delta是copybits命令便宜量，源坐标-目的坐标
 static inline Shadow *__new_shadow(RedWorker *worker, Drawable *item, SpicePoint *delta)
 {
-    if (!delta->x && !delta->y) {//完全没偏移，不用创建
+    if (!delta->x && !delta->y) { 
+		/* copybits的引用没有偏移，则copybits没有含义，不用处理该copybits命令 */
         return NULL;
     }
 
     Shadow *shadow = spice_new(Shadow, 1);
     worker->shadows_count++; //命令树shadows节点计数自增
 #ifdef PIPE_DEBUG
-    shadow->base.id = ++worker->last_id; //id
+    shadow->base.id = ++worker->last_id;
 #endif
     shadow->base.type = TREE_ITEM_TYPE_SHADOW;
     shadow->base.container = NULL; //shadow默认没有container
     shadow->owner = &item->tree_item; //触发shadow生成的copybits命令树节点
     //设置copybits引用的区域，注意shadow的rgn中存的是被引用的区域，而不是目标区域
     //目标区域在copybits中
-    region_clone(&shadow->base.rgn, &item->tree_item.base.rgn);
-    region_offset(&shadow->base.rgn, delta->x, delta->y);
-    ring_item_init(&shadow->base.siblings_link);
-    region_init(&shadow->on_hold); //on_hold?
-    item->tree_item.shadow = shadow; //Shadow和copybits的DrawItem之间相互关联
+    region_clone(&shadow->base.rgn, &item->tree_item.base.rgn); //shadow的rgn为copybits的rgn
+    region_offset(&shadow->base.rgn, delta->x, delta->y);//将rgn进行偏移，得到引用的区域
+    ring_item_init(&shadow->base.siblings_link);//还没加入命令树
+    region_init(&shadow->on_hold); //初始化on_hold区域
+    item->tree_item.shadow = shadow; //设置copybits的shadow
     //创建时shadow没有直接加到树中
     return shadow;
 }
 
 /* 将copybits命令item添加到surface的ring命令树，
-delta是copybits的图像偏移量*/
+ * delta是copybits的图像偏移量
+ */
 static inline int red_current_add_with_shadow(RedWorker *worker, Ring *ring, Drawable *item,
                                               SpicePoint *delta)
 {
@@ -4080,8 +4154,9 @@ static inline int red_current_add_with_shadow(RedWorker *worker, Ring *ring, Dra
     stat_time_t start_time = stat_now();
 #endif
 
+	//先创建shadow节点
     Shadow *shadow = __new_shadow(worker, item, delta);
-    if (!shadow) {
+    if (!shadow) { //copybits没偏移则不用添加命令树，返回添加命令树失败
         stat_add(&worker->add_stat, start_time);
         return FALSE;
     }
@@ -4090,7 +4165,8 @@ static inline int red_current_add_with_shadow(RedWorker *worker, Ring *ring, Dra
     // for now putting them on root.
 
     // only primary surface streams are supported
-    if (is_primary_surface(worker, item->surface_id)) {//命令属于主surface
+    if (is_primary_surface(worker, item->surface_id)) {
+		/* 如果是主surface的copybits，需要将引用区域的 */
         red_detach_streams_behind(worker, &shadow->base.rgn, NULL);
     }
 	//直接将shadow直接挂到命令式最前面
@@ -4163,7 +4239,7 @@ static inline int red_current_add_qxl(RedWorker *worker, Ring *ring, Drawable *d
 {
     int ret;
 	
-    if (has_shadow(red_drawable)) {//COPYBITS命令
+    if (has_shadow(red_drawable)) {//如果是copybits命令
         SpicePoint delta;
 
 #ifdef RED_WORKER_STAT
@@ -4392,63 +4468,71 @@ static Drawable *get_drawable(RedWorker *worker, uint8_t effect, RedDrawable *re
     return drawable;
 }
 
-static inline int red_handle_depends_on_target_surface(RedWorker *worker, uint32_t surface_id)
+/*  */ 
+static inline int 
+red_handle_depends_on_target_surface(RedWorker *worker, uint32_t surface_id)
 {
     RedSurface *surface;
     RingItem *ring_item;
 
     surface = &worker->surfaces[surface_id];
 
+	// 将依赖在本surface的绘图命令渲染掉，从后开始渲染，因为最后的命令最老
     while ((ring_item = ring_get_tail(&surface->depend_on_me))) {
         Drawable *drawable;
         DependItem *depended_item = SPICE_CONTAINEROF(ring_item, DependItem, ring_item);
+		// 找回当前依赖本surface的绘图命令列表
         drawable = depended_item->drawable;
+		// 刷新依赖命令surface的绘图命令区域
         surface_flush(worker, drawable->surface_id, &drawable->red_drawable->bbox);
     }
 
     return TRUE;
 }
 
-//添加surface依赖项，
-// drawable 依赖者
-// depend_on_surface_id drawable依赖的目标surface id
-// 
-static inline void add_to_surface_dependency(
-	RedWorker *worker, int depend_on_surface_id,
-	DependItem *depend_item, Drawable *drawable)
+/** 添加surface依赖关系
+ * depend_on_surface_id，drawable依赖哪个surface
+ * depend_item, 被操作的依赖关系表示实体
+ * drawable， 依赖surface的drawable对象
+**/
+static inline void add_to_surface_dependency(RedWorker *worker, 
+	int depend_on_surface_id, DependItem *depend_item, Drawable *drawable)
 {
     RedSurface *surface;
 
-    if (depend_on_surface_id == -1) { 
-		//依赖id为-1，干掉依赖项中的依赖命令，
-		//也就是这个依赖项无效
+	// 依赖surface的id为-1表示不存在依赖关系，依赖关系的源drawable设置为空
+    if (depend_on_surface_id == -1) {
         depend_item->drawable = NULL;
         return;
     }
 
-	//需要依赖，先取出surface
+	//获取依赖的redsurface
     surface = &worker->surfaces[depend_on_surface_id];
 
-	//设置依赖性地drawable
+	// 使用DependItem来表示一个drawable依赖一个surface，DependItem会被连接到
+	// redsurface的depend_on_me的链表中，也就是说，可以通过depend_on_me列表
+	// 找到所有依赖这个surface的drawable对象
     depend_item->drawable = drawable;
-	//将依赖关系添加到surface的依赖关系列表
+	//新的依赖关系添加的depend_on_me的表头，也就是说，depend_on_me链表中
+	//是从新到老的顺序记录依赖关系的。
     ring_add(&surface->depend_on_me, &depend_item->ring_item);
 }
 
-static inline int red_handle_surfaces_dependencies(RedWorker *worker, Drawable *drawable)
+// 处理surfaces的依赖关系
+static inline int 
+red_handle_surfaces_dependencies(RedWorker *worker, Drawable *drawable)
 {
     int x;
 
     for (x = 0; x < 3; ++x) {
         // surface self dependency is handled by shadows in "current", or by
-        // handle_self_bitmap surface
-        // surface内部的依赖关由surface的current命令树中的shadows来控制，或者
-        // 是handle_self_bitmap surface控制
+        // handle_self_bitmap，surface内部的依赖关系，由shadows或者self_bitmap
+        // 来处理，这里的依赖关系，指的是不同surface之间的依赖关系。
         if (drawable->surfaces_dest[x] != drawable->surface_id) {
-			//显示目标和
+			// 如果依赖surface的为-1，只会置空drawable依赖关系数组
             add_to_surface_dependency(worker, drawable->surfaces_dest[x],
                                       &drawable->depend_items[x], drawable);
-
+			//如果依赖于主surface，需要处理流相关问题
             if (drawable->surfaces_dest[x] == 0) {
                 QRegion depend_region;
                 region_init(&depend_region);
@@ -4461,7 +4545,9 @@ static inline int red_handle_surfaces_dependencies(RedWorker *worker, Drawable *
     return TRUE;
 }
 
-static inline void red_inc_surfaces_drawable_dependencies(RedWorker *worker, Drawable *drawable)
+// 增加drawable对依赖surface的redsurface的引用计数
+static inline void 
+red_inc_surfaces_drawable_dependencies(RedWorker *worker, Drawable *drawable)
 {
     int x;
     int surface_id;
@@ -4493,7 +4579,7 @@ static inline void red_process_drawable(RedWorker *worker, RedDrawable *red_draw
 
     worker->surfaces[surface_id].refs++;
 
-	//记录目标区域, 
+	// 目标区域赋值到rgn中，如果有裁剪，下面进行裁剪
     region_add(&drawable->tree_item.base.rgn, &red_drawable->bbox);
 #ifdef PIPE_DEBUG
     printf("TEST: DRAWABLE: id %u type %s effect %u bbox %u %u %u %u\n",
@@ -4504,7 +4590,8 @@ static inline void red_process_drawable(RedWorker *worker, RedDrawable *red_draw
            red_drawable->bbox.bottom, red_drawable->bbox.right);
 #endif
 
-    if (red_drawable->clip.type == SPICE_CLIP_TYPE_RECTS) { //有裁剪
+	// 设置drawable的drawitem的裁剪区域
+    if (red_drawable->clip.type == SPICE_CLIP_TYPE_RECTS) {
         QRegion rgn;
 
         region_init(&rgn);
@@ -4517,11 +4604,15 @@ static inline void red_process_drawable(RedWorker *worker, RedDrawable *red_draw
         dependent on the surface) as long as the drawable is alive.
         However, surface->depend_on_me is affected by a drawable only
         as long as it is in the current tree (hasn't been rendered yet).
+        surface->refs和surface->depend_on_me都描述了其他surface的drawable对
+        本surface的依赖关系，但两个关系的生命周期不一样，只要drawable存在，则
+        refs不会递减，depend_on_me则和current树相关，只要还在树种（还未被渲染）
+        就会有depend_on_me。
     */
     red_inc_surfaces_drawable_dependencies(worker, drawable);
 
     if (region_is_empty(&drawable->tree_item.base.rgn)) {
-		//裁剪后目标区域为空，直接干掉渲染命令
+		//裁剪后目标区域为空，不用处理，直接释放绘图命令
         goto cleanup;
     }
 
@@ -4529,21 +4620,24 @@ static inline void red_process_drawable(RedWorker *worker, RedDrawable *red_draw
         goto cleanup;
     }
 
+	// 将依赖surface_id的绘图命令的目标surface的目标区域刷新一下
     if (!red_handle_depends_on_target_surface(worker, surface_id)) {
         goto cleanup;
     }
 
+	// 设置drawable的依赖关系
     if (!red_handle_surfaces_dependencies(worker, drawable)) {
         goto cleanup;
     }
 
-	//将Drawable添加到目标Surface的命令树
-    if (red_current_add_qxl(worker, &worker->surfaces[surface_id].current, drawable,
-                            red_drawable)) 
+	// 将drawable添加到red_surface的current命令树
+    if (red_current_add_qxl(worker, &worker->surfaces[surface_id].current, 
+			drawable, red_drawable))
     {
-        if (drawable->tree_item.effect != QXL_EFFECT_OPAQUE) {//透明命令
-            worker->transparent_count++;
+        if (drawable->tree_item.effect != QXL_EFFECT_OPAQUE) {
+            worker->transparent_count++; //添加命令树成功，对透明命令进行计数
         }
+		//将drawable添加到命令管道
         red_pipes_add_drawable(worker, drawable);
 #ifdef DRAW_ALL
         red_draw_qxl_drawable(worker, drawable);
@@ -4635,18 +4729,20 @@ static void image_surface_init(RedWorker *worker)
     worker->image_surfaces.ops = &image_surfaces_ops;
 }
 
-static void localize_bitmap(RedWorker *worker, SpiceImage **image_ptr, SpiceImage *image_store,
-                            Drawable *drawable)
+// 将bitmap spice图像本地化
+static void localize_bitmap(RedWorker *worker, SpiceImage **image_ptr,
+	SpiceImage *image_store, Drawable *drawable)
 {
     SpiceImage *image = *image_ptr;
 
-    if (image == NULL) {
+    if (image == NULL) { //图像为空，图像指针指向self_bitmap_image指向的图像
         spice_assert(drawable != NULL);
         spice_assert(drawable->red_drawable->self_bitmap_image != NULL);
         *image_ptr = drawable->red_drawable->self_bitmap_image;
         return;
     }
 
+	// 图像缓存查找
     if (image_cache_hit(&worker->image_cache, image->descriptor.id)) {
         image_store->descriptor = image->descriptor;
         image_store->descriptor.type = SPICE_IMAGE_TYPE_FROM_CACHE;
@@ -4655,6 +4751,8 @@ static void localize_bitmap(RedWorker *worker, SpiceImage **image_ptr, SpiceImag
         return;
     }
 
+	// 驱动只会发下来三类图像：QUIC、BITMAP、SURFACE，其他类型是spice处理过程
+	// 中创建的
     switch (image->descriptor.type) {
     case SPICE_IMAGE_TYPE_QUIC: {
         image_store->descriptor = image->descriptor;
@@ -4669,7 +4767,7 @@ static void localize_bitmap(RedWorker *worker, SpiceImage **image_ptr, SpiceImag
 #endif
         break;
     }
-    case SPICE_IMAGE_TYPE_BITMAP:
+    case SPICE_IMAGE_TYPE_BITMAP: //BITMAP、SURFACE图像没有做处理
     case SPICE_IMAGE_TYPE_SURFACE:
         /* nothing */
         break;
@@ -4678,6 +4776,7 @@ static void localize_bitmap(RedWorker *worker, SpiceImage **image_ptr, SpiceImag
     }
 }
 
+//画刷本地化
 static void localize_brush(RedWorker *worker, SpiceBrush *brush, SpiceImage *image_store)
 {
     if (brush->type == SPICE_BRUSH_TYPE_PATTERN) {
@@ -4685,6 +4784,7 @@ static void localize_brush(RedWorker *worker, SpiceBrush *brush, SpiceImage *ima
     }
 }
 
+//蒙版本地化
 static void localize_mask(RedWorker *worker, SpiceQMask *mask, SpiceImage *image_store)
 {
     if (mask->bitmap) {
@@ -4692,19 +4792,21 @@ static void localize_mask(RedWorker *worker, SpiceQMask *mask, SpiceImage *image
     }
 }
 
+//讲drawable对应的red_drawable渲染到画布上
 static void red_draw_qxl_drawable(RedWorker *worker, Drawable *drawable)
 {
     RedSurface *surface;
     SpiceCanvas *canvas;
-    SpiceClip clip = drawable->red_drawable->clip;
+    SpiceClip clip = drawable->red_drawable->clip; //裁剪区域
 
-    surface = &worker->surfaces[drawable->surface_id];
-    canvas = surface->context.canvas;
+    surface = &worker->surfaces[drawable->surface_id]; //目标surface
+    canvas = surface->context.canvas; //surface的画布
 
-    image_cache_aging(&worker->image_cache);
+    image_cache_aging(&worker->image_cache); //执行缓存老化
 
-    worker->preload_group_id = drawable->group_id;
+    worker->preload_group_id = drawable->group_id; //更新预加载组id
 
+	// 将当前命令的目标区域增加到surface的脏区域
     region_add(&surface->draw_dirty_region, &drawable->red_drawable->bbox);
 
     switch (drawable->red_drawable->type) {
@@ -4833,7 +4935,7 @@ static void red_draw_qxl_drawable(RedWorker *worker, Drawable *drawable)
 
 #ifndef DRAW_ALL //没有定义Draw_ALL，所以此处代码移植有效
 
-// 画一个渲染命令
+// 渲染一个drawable对象，会触发渲染qxl_drawable对象
 static void red_draw_drawable(RedWorker *worker, Drawable *drawable)
 {
 #ifdef UPDATE_AREA_BY_TREE
@@ -4844,7 +4946,7 @@ static void red_draw_drawable(RedWorker *worker, Drawable *drawable)
     canvas->ops->group_start(canvas,
                              &drawable->tree_item.base.rgn);
 #endif
-	//刷新依赖画布的图像
+	//先刷依赖画布的图像
     red_flush_source_surfaces(worker, drawable);
 	//将drawable渲染到画布
     red_draw_qxl_drawable(worker, drawable);
@@ -4858,13 +4960,13 @@ static void validate_area(RedWorker *worker, const SpiceRect *area, uint32_t sur
     RedSurface *surface;
 
     surface = &worker->surfaces[surface_id];
-    if (!surface->context.canvas_draws_on_surface) {
+    if (!surface->context.canvas_draws_on_surface) {//SW画布不走此流程
         SpiceCanvas *canvas = surface->context.canvas;
         int h;
         int stride = surface->context.stride;
         uint8_t *line_0 = surface->context.line_0;
 
-        if (!(h = area->bottom - area->top)) {
+        if (!(h = area->bottom - area->top)) { //高度为0，直接返回
             return;
         }
 
@@ -5001,15 +5103,14 @@ static void red_update_area_till(RedWorker *worker, const SpiceRect *area, int s
                 break;
             }
         }
-    } else {
-    	//下一个比last更老的drawable
+    } else { //surface_id跟last同一个surface，则直接取last的surface链表的后一个节点
         ring_item = ring_next(&surface->current_list, &last->surface_list_link);
         if (ring_item) {
             surface_last = SPICE_CONTAINEROF(ring_item, Drawable, surface_list_link);
         }
     }
 	
-    if (!surface_last) { //没有比last更老的渲染指令了，就不用更新了
+    if (!surface_last) { //可能后面都没节点了，则直接返回，不用更新区域
         return;
     }
 
@@ -5021,36 +5122,44 @@ static void red_update_area_till(RedWorker *worker, const SpiceRect *area, int s
     region_add(&rgn, area);
 
     // find the first older drawable that intersects with the area
+    // 继续往后找surface_last，这次找到其目标区域跟参数区域相交的命令
     do {
         now = SPICE_CONTAINEROF(ring_item, Drawable, surface_list_link);
         if (region_intersects(&rgn, &now->tree_item.base.rgn)) {
-			//往后找到第一个跟区域相交的命令，中断循环
-            surface_last = now;//往后挪动
+            surface_last = now;
             break;
         }
     } while ((ring_item = ring_next(ring, ring_item)));
 
     region_destroy(&rgn);
 
-    if (!surface_last) {//如果没有找到跟区域相交的命令，则不用渲染
+	// 如果没有相交的命令，也不用更新
+    if (!surface_last) {
         return;
     }
 
+	// surface_last是drawable命令之后，surface_id层里最新的一个现实绘图命令
+	// surface->current_list从后开始进行渲染
     do {
         Container *container;
-		//从最老的命令开始，一直到最后一个surface_last
+		//从后开始渲染，所以总是取链表的尾部节点
         ring_item = ring_get_tail(&surface->current_list);
+		//恢复出尾部drawable存放在now中
         now = SPICE_CONTAINEROF(ring_item, Drawable, surface_list_link);
+		//先加一次now的引用计数，防止now在current_remove_drawable时被释放掉
         now->refs++;
-        container = now->tree_item.base.container; //命令的container
-        current_remove_drawable(worker, now); //将now从命令树摘除
-        container_cleanup(worker, container); //清理container，只影响now的祖先节点
+		//获取now的container
+        container = now->tree_item.base.container;
+		//命令树种摘除drawable
+        current_remove_drawable(worker, now);
+		//尝试清理DrawItem的container，防止出现container没有孩子，或者只有一个孩子的情况。
+        container_cleanup(worker, container);
         /* red_draw_drawable may call red_update_area for the surfaces 'now' depends on. Notice,
            that it is valid to call red_update_area in this case and not red_update_area_till:
            It is impossible that there was newer item then 'last' in one of the surfaces
            that red_update_area is called for, Otherwise, 'now' would have already been rendered.
            See the call for red_handle_depends_on_target_surface in red_process_drawable */
-        //将now渲染掉
+        //将now绘图命令渲染掉
         red_draw_drawable(worker, now);
 		//释放Drawable
         release_drawable(worker, now);
@@ -5058,6 +5167,8 @@ static void red_update_area_till(RedWorker *worker, const SpiceRect *area, int s
     validate_area(worker, area, surface_id);
 }
 
+// 刷新制定surface的指定矩形区域，但是实际刷新的区域可能超出area的区域。
+// 假设surface中的命令A跟area相交，那么比A命令都老的surface绘图命令都会被渲染刷新
 static void red_update_area(RedWorker *worker, const SpiceRect *area, int surface_id)
 {
     RedSurface *surface;
@@ -5072,6 +5183,7 @@ static void red_update_area(RedWorker *worker, const SpiceRect *area, int surfac
     spice_debug("surface %d: area ==>", surface_id);
     rect_debug(area);
 
+	// 参数校验
     spice_return_if_fail(surface_id >= 0 && surface_id < NUM_SURFACES);
     spice_return_if_fail(area);
     spice_return_if_fail(area->left >= 0 && area->top >= 0 &&
@@ -5079,6 +5191,7 @@ static void red_update_area(RedWorker *worker, const SpiceRect *area, int surfac
 
     surface = &worker->surfaces[surface_id];
 
+	// 最后一个drawable先设置为空
     last = NULL;
 #ifdef ACYCLIC_SURFACE_DEBUG
     gn = ++surface->current_gn;
@@ -5086,6 +5199,7 @@ static void red_update_area(RedWorker *worker, const SpiceRect *area, int surfac
     ring = &surface->current_list;
     ring_item = ring;
 
+	// 找到最新的一个跟参数矩形相交的命令
     region_init(&rgn);
     region_add(&rgn, area);
     while ((ring_item = ring_next(ring, ring_item))) {
@@ -5097,21 +5211,32 @@ static void red_update_area(RedWorker *worker, const SpiceRect *area, int surfac
     }
     region_destroy(&rgn);
 
+	// 如果surface里没有命令跟制定区域相交，不用渲染命令，直接转换一下缓冲区就好了
     if (!last) {
+		//画布里的数据转到缓冲区里
         validate_area(worker, area, surface_id);
         return;
     }
 
+	// 渲染比最新相交命令都老的绘图命令到画布
     do {
         Container *container;
 
+		//从后往前刷，也就是按照时间顺序进行刷新
         ring_item = ring_get_tail(&surface->current_list);
         now = SPICE_CONTAINEROF(ring_item, Drawable, surface_list_link);
+		//current_remove_drawable会释放drawable的引用计数，所以先加引用防止
+		//drawable被释放掉。
         now->refs++;
         container = now->tree_item.base.container;
+		//从命令树，surface，redworker中移除drawable，因为从surface中移除了
+		//关系，所以这个循环中不要对ring_item进行操作了
         current_remove_drawable(worker, now);
+		//对父container进行清理
         container_cleanup(worker, container);
+		//将当前命令渲染到画布
         red_draw_drawable(worker, now);
+		//释放drawable对象
         release_drawable(worker, now);
 #ifdef ACYCLIC_SURFACE_DEBUG
         if (gn != surface->current_gn) {
@@ -5119,6 +5244,7 @@ static void red_update_area(RedWorker *worker, const SpiceRect *area, int surfac
         }
 #endif
     } while (now != last);
+	//转换画布缓冲区，SW画布什么都没做
     validate_area(worker, area, surface_id);
 }
 
@@ -5436,8 +5562,6 @@ static int red_process_commands(RedWorker *worker, uint32_t max_pipe_size, int *
         default:
             spice_error("bad command type");
         }
-
-		
         n++;
         if ((worker->display_channel &&
              red_channel_all_blocked(&worker->display_channel->common.base))
@@ -5570,7 +5694,7 @@ static ImageItem *red_add_surface_area_image(
     return item;
 }
 
-//往一个DCC里
+// 将制定surface画布里的图像推送到ddc的发送管道里
 static void red_push_surface_image(DisplayChannelClient *dcc, int surface_id)
 {
     SpiceRect area;
@@ -6914,14 +7038,14 @@ static inline int red_compress_image(DisplayChannelClient *dcc,
     }
 }
 
-//将
+//添加图像缓存
 static inline void 
 red_display_add_image_to_pixmap_cache(RedChannelClient *rcc,
 	SpiceImage *image, SpiceImage *io_image,
 	int is_lossy)
 {
     DisplayChannel *display_channel = 
-		sSPICE_CONTAINEROF(rcc->channel, DisplayChannel, common.base);
+		SPICE_CONTAINEROF(rcc->channel, DisplayChannel, common.base);
     DisplayChannelClient *dcc = RCC_TO_DCC(rcc);
 
     if ((image->descriptor.flags & SPICE_IMAGE_FLAGS_CACHE_ME)) 
@@ -9200,7 +9324,7 @@ static void red_marshall_image(RedChannelClient *rcc, SpiceMarshaller *m, ImageI
     spice_chunks_destroy(chunks);
 }
 
-// 调制UpgradeItem管道消息
+// 调制surface更新管道消息
 static void red_display_marshall_upgrade(RedChannelClient *rcc, SpiceMarshaller *m,
                                          UpgradeItem *item)
 {
@@ -9227,8 +9351,6 @@ static void red_display_marshall_upgrade(RedChannelClient *rcc, SpiceMarshaller 
                                          &src_bitmap_out, &mask_bitmap_out);
 
 	//mask_bitmap_out必定为空，所以不用填充mask
-
-	//
     fill_bits(dcc, src_bitmap_out, copy.data.src_bitmap, item->drawable, FALSE);
 }
 
@@ -9269,6 +9391,8 @@ static void red_display_marshall_stream_start(RedChannelClient *rcc,
     spice_marshall_msg_display_stream_create(base_marshaller, &stream_create);
 }
 
+// 调制流裁剪管道项命令，让客户端对指定id的流重新进行裁剪。
+// 这里要求客户端和服务端的流id一一对应
 static void red_display_marshall_stream_clip(RedChannelClient *rcc,
                                          SpiceMarshaller *base_marshaller,
                                          StreamClipItem *item)
@@ -9278,6 +9402,7 @@ static void red_display_marshall_stream_clip(RedChannelClient *rcc,
 
     spice_assert(agent->stream);
 
+	//设置流裁剪命令
     red_channel_client_init_send_data(rcc, SPICE_MSG_DISPLAY_STREAM_CLIP, &item->base);
     SpiceMsgDisplayStreamClip stream_clip;
 
@@ -9784,7 +9909,7 @@ static SpiceCanvas *create_ogl_pixmap_context(RedWorker *worker, uint32_t width,
 }
 #endif
 
-/* 为Surface创建画布，支持三种类型的渲染方式 */
+/* 为Surface创建画布，支持三种类型的渲染方式， 但VDI里只使用了SW渲染 */
 static inline void *create_canvas_for_surface(RedWorker *worker, RedSurface *surface,
                                               uint32_t renderer, uint32_t width, uint32_t height,
                                               int32_t stride, uint32_t format, void *line_0)
@@ -9921,12 +10046,12 @@ static inline void red_create_surface(
 	// 设置宽、高、行长、格式、画布缓冲区地址
     surface->context.width = width;
     surface->context.height = height;
-    surface->context.format = format;
-    surface->context.stride = stride;
+    surface->context.format = format; //默认32
+    surface->context.stride = stride; //stride默认负值,windows 1920*1080情况下为-7680，
     surface->context.line_0 = line_0;
 	//没有设置DrawContext的top_down
 	
-    if (!data_is_valid) {//这段看不懂
+    if (!data_is_valid) {//这段没看懂
         memset((char *)line_0 + (int32_t)(stride * (height - 1)), 0, height*abs(stride));
     }
     surface->create.info = NULL;
@@ -9936,7 +10061,7 @@ static inline void red_create_surface(
     ring_init(&surface->depend_on_me);
     region_init(&surface->draw_dirty_region);
     surface->refs = 1;
-    if (worker->renderer != RED_RENDERER_INVALID) {
+    if (worker->renderer != RED_RENDERER_INVALID) {// 如果设置了统一的渲染方式
 		// 为Surface绘画上下文创建SpiceCanvas
         surface->context.canvas = create_canvas_for_surface(
         	worker, surface, worker->renderer, width, height, 
@@ -9957,7 +10082,8 @@ static inline void red_create_surface(
         }
         return;
     }
-
+	
+	// 如果各个surface的渲染方式都不一致
     for (i = 0; i < worker->num_renderers; i++) {
         surface->context.canvas = create_canvas_for_surface(worker, surface, worker->renderers[i],
                                                             width, height, stride,
@@ -10616,7 +10742,7 @@ static int common_channel_config_socket(RedChannelClient *rcc)
     return TRUE;
 }
 
-// SpiceWorker更新掩码
+// SpiceWorker更新事件监听掩码
 static void worker_watch_update_mask(SpiceWatch *watch, int event_mask)
 {
     struct RedWorker *worker;
@@ -10831,20 +10957,21 @@ error:
     return NULL;
 }
 
+/* 显示通道在持有管道项时调用 */
 static void display_channel_hold_pipe_item(RedChannelClient *rcc, PipeItem *item)
 {
     spice_assert(item);
     switch (item->type) {
-    case PIPE_ITEM_TYPE_DRAW:
+    case PIPE_ITEM_TYPE_DRAW: //对DPI命令增加引用
         ref_drawable_pipe_item(SPICE_CONTAINEROF(item, DrawablePipeItem, dpi_pipe_item));
         break;
     case PIPE_ITEM_TYPE_STREAM_CLIP:
         ((StreamClipItem *)item)->refs++; //流裁剪命令引用增加
         break;
-    case PIPE_ITEM_TYPE_UPGRADE:
+    case PIPE_ITEM_TYPE_UPGRADE: //surface更新命令
         ((UpgradeItem *)item)->refs++;
         break;
-    case PIPE_ITEM_TYPE_IMAGE:
+    case PIPE_ITEM_TYPE_IMAGE: // surface图像命令
         ((ImageItem *)item)->refs++;
         break;
     default:
@@ -10887,6 +11014,7 @@ static void display_channel_client_release_item_after_push(DisplayChannelClient 
 
 // TODO: share code between before/after_push since most of the items need the same
 // release
+// 如果还没有push之前DCC的管道项就要被release时调用下面函数
 static void display_channel_client_release_item_before_push(DisplayChannelClient *dcc,
                                                             PipeItem *item)
 {
@@ -10951,8 +11079,7 @@ static void display_channel_client_release_item_before_push(DisplayChannelClient
     }
 }
 
-//解除DCC中PipeItem，其实是PipeItem的子结构
-//item_pushed标志item是不是经过发送的释放动作
+// 释放RCC中的管道项item， item_pushed标志item是不是已经被发送过
 static void display_channel_release_item(RedChannelClient *rcc, PipeItem *item, int item_pushed)
 {
     DisplayChannelClient *dcc = RCC_TO_DCC(rcc);

@@ -33,6 +33,7 @@
 #define MAIN_CHANNEL_RECEIVE_BUF_SIZE \
     (4096 + (REDS_AGENT_WINDOW_SIZE + REDS_NUM_INTERNAL_AGENT_MESSAGES) * SPICE_AGENT_MAX_DATA_SIZE)
 
+//MainChannel是RedChannel的子类
 typedef struct MainChannel {
     RedChannel base;
     uint8_t recv_buf[MAIN_CHANNEL_RECEIVE_BUF_SIZE];

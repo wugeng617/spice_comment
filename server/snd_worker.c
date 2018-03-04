@@ -956,8 +956,8 @@ static int snd_playback_send_write(PlaybackChannel *playback_channel)
     else { //压缩数据模式，压缩编码数据，压缩失败时断开连接
         int n = sizeof(playback_channel->encode_buf);
         if (snd_codec_encode(playback_channel->codec, (uint8_t *) frame->samples,
-                                    snd_codec_frame_size(playback_channel->codec) * sizeof(frame->samples[0]),
-                                    playback_channel->encode_buf, &n) != SND_CODEC_OK) {
+				snd_codec_frame_size(playback_channel->codec) * sizeof(frame->samples[0]),
+				playback_channel->encode_buf, &n) != SND_CODEC_OK) {
             spice_printerr("encode failed");
             snd_disconnect_channel(channel);
             return FALSE;

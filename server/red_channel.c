@@ -272,6 +272,7 @@ static void red_peer_handle_incoming(RedsStream *stream, IncomingHandler *handle
         }
 
 		// 将handler->header.data数据头部中的消息类型和消息大小解析出来
+		// msg_size 可能为0，可能造成崩溃，USB映射曾经出现过这样的情况
         msg_size = handler->header.get_msg_size(&handler->header);
         msg_type = handler->header.get_msg_type(&handler->header);
 		
@@ -1116,6 +1117,13 @@ void red_channel_client_default_migrate(RedChannelClient *rcc)
     red_channel_client_pipe_add_type(rcc, PIPE_ITEM_TYPE_MIGRATE);
 }
 
+/** red_channel_create - 创建一个RedChannel的继承对象
+ *  size 子类对象的大小
+ *  core 核心接口对象，提供定时器和事件监听
+ *  type 通道类型
+ *  id 通道id
+ *  handle_acks 是否需要做ack控制
+**/
 RedChannel *red_channel_create(int size,
 	SpiceCoreInterface *core,
 	uint32_t type, uint32_t id,
@@ -1148,7 +1156,8 @@ RedChannel *red_channel_create(int size,
     // TODO: send incoming_cb as parameters instead of duplicating?
     /* 设置通道的收包定制函数 */
 
-	// 设置消息缓冲区分配函数
+	// 设置消息缓冲区分配函数， channel_cbs中的缓冲区分配和释放函数被设置给
+	// incoming_cb的消息缓冲区分配和释放函数
     channel->incoming_cb.alloc_msg_buf = (alloc_msg_recv_buf_proc)channel_cbs->alloc_recv_buf;
 	// 设置消息缓冲区释放函数
 	channel->incoming_cb.release_msg_buf = (release_msg_recv_buf_proc)channel_cbs->release_recv_buf;

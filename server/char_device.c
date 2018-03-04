@@ -29,19 +29,19 @@
 #define SPICE_CHAR_DEVICE_WAIT_TOKENS_TIMEOUT 30000
 
 typedef struct SpiceCharDeviceClientState SpiceCharDeviceClientState;
-struct SpiceCharDeviceClientState {
-    RingItem link;
-    SpiceCharDeviceState *dev;
-    RedClient *client;
-    int do_flow_control;
-    uint64_t num_client_tokens;
+struct SpiceCharDeviceClientState { //表示字符设备与客户端之间的关联
+    RingItem link; //接入到SpiceCharDeviceState的clients链表
+    SpiceCharDeviceState *dev; //指向CDS字符设备结构
+    RedClient *client; //指向客户端实例
+    int do_flow_control; //客户端是否做流控，估计没启用
+    uint64_t num_client_tokens; //客户端令牌总数
     uint64_t num_client_tokens_free; /* client messages that were consumed by the device */
     uint64_t num_send_tokens; /* send to client */
     SpiceTimer *wait_for_tokens_timer;
     int wait_for_tokens_started;
-    Ring send_queue;
-    uint32_t send_queue_size;
-    uint32_t max_send_queue_size;
+    Ring send_queue; //发送队列
+    uint32_t send_queue_size; //发送队列大小
+    uint32_t max_send_queue_size; //最大的发送队列大小
 };
 
 struct SpiceCharDeviceState {
@@ -51,14 +51,15 @@ struct SpiceCharDeviceState {
     uint32_t refs;
 
     Ring write_queue;
-    Ring write_bufs_pool;
+    Ring write_bufs_pool; //写缓冲区池
     SpiceCharDeviceWriteBuffer *cur_write_buf;
     uint8_t *cur_write_buf_pos;
     SpiceTimer *write_to_dev_timer;
-    uint64_t num_self_tokens;
+    uint64_t num_self_tokens; //字符设备的令牌，该令牌控发不控收，也就是下行数据
+    // 每分配一次服务单写入缓冲区，令牌减1，每归还一个服务端写入缓冲区，令牌加1
 
-    Ring clients; /* list of SpiceCharDeviceClientState */
-    uint32_t num_clients;
+    Ring clients; /* list of SpiceCharDeviceClientState CDCS列表*/
+    uint32_t num_clients; //CDCS个数
 
     uint64_t client_tokens_interval; /* frequency of returning tokens to the client */
     SpiceCharDeviceInstance *sin;
@@ -70,9 +71,9 @@ struct SpiceCharDeviceState {
 };
 
 enum {
-    WRITE_BUFFER_ORIGIN_NONE,
-    WRITE_BUFFER_ORIGIN_CLIENT,
-    WRITE_BUFFER_ORIGIN_SERVER,
+    WRITE_BUFFER_ORIGIN_NONE, //没有被分配出去的空闲写入缓冲区
+    WRITE_BUFFER_ORIGIN_CLIENT, //由客户端发起的写入缓冲区，客户端消息写入到字符设备，上行数据
+    WRITE_BUFFER_ORIGIN_SERVER, //由服务端发起的写入缓冲区，虚拟机写入数据到字符设备，下行数据
     WRITE_BUFFER_ORIGIN_SERVER_NO_TOKEN,
 };
 
@@ -492,6 +493,8 @@ static void spice_char_dev_write_retry(void *opaque)
     spice_char_device_write_to_device(dev);
 }
 
+// 获取字符设备的显示缓冲区，origin决定缓冲区数据的方向
+// migrated_data_tokens: 是否是迁移时的令牌计算，迁移时的令牌计算不一样，令牌价格不一致
 static SpiceCharDeviceWriteBuffer *__spice_char_device_write_buffer_get(
     SpiceCharDeviceState *dev, RedClient *client,
     int size, int origin, int migrated_data_tokens)
@@ -499,36 +502,45 @@ static SpiceCharDeviceWriteBuffer *__spice_char_device_write_buffer_get(
     RingItem *item;
     SpiceCharDeviceWriteBuffer *ret;
 
+	// 为下行数据分配获取缓冲区，需要判断字符设备是否拥塞，没有令牌的情况
+	// 下申请不到缓冲区，接收客户端数据的缓冲区申请，则不受令牌控制
     if (origin == WRITE_BUFFER_ORIGIN_SERVER && !dev->num_self_tokens) {
         return NULL;
     }
 
+	// 先从写缓冲池中取，如果没有则分配一个字符设备写缓冲区结构
     if ((item = ring_get_tail(&dev->write_bufs_pool))) {
         ret = SPICE_CONTAINEROF(item, SpiceCharDeviceWriteBuffer, link);
-        ring_remove(item);
+        ring_remove(item); //从池中取出来
     } else {
-        ret = spice_new0(SpiceCharDeviceWriteBuffer, 1);
+        ret = spice_new0(SpiceCharDeviceWriteBuffer, 1); //动态分配
     }
 
     spice_assert(!ret->buf_used);
 
+	// 写入缓冲区空间不够，扩充大小
     if (ret->buf_size < size) {
         ret->buf = spice_realloc(ret->buf, size);
         ret->buf_size = size;
     }
+	// 写入缓冲区的创建原因
     ret->origin = origin;
 
     if (origin == WRITE_BUFFER_ORIGIN_CLIENT) {
        spice_assert(client);
+	   //找出字符设备客户端的管理结构
        SpiceCharDeviceClientState *dev_client = spice_char_device_client_find(dev, client);
-       if (dev_client) {
+       if (dev_client) {//找到了SCDCS
             if (!migrated_data_tokens &&
                 dev_client->do_flow_control && !dev_client->num_client_tokens) {
+                //开启了流控但是没有客户端令牌了
                 spice_printerr("token violation: dev %p client %p", dev, client);
+				//执行客户端溢出回调
                 spice_char_device_handle_client_overflow(dev_client);
                 goto error;
             }
-            ret->client = client;
+			//没有流控或者客户端令牌数量充足，设置客户端指针
+            ret->client = client; //设置client
             if (!migrated_data_tokens && dev_client->do_flow_control) {
                 dev_client->num_client_tokens--;
             }
@@ -542,14 +554,17 @@ static SpiceCharDeviceWriteBuffer *__spice_char_device_write_buffer_get(
         dev->num_self_tokens--;
     }
 
-    ret->token_price = migrated_data_tokens ? migrated_data_tokens : 1;
+    ret->token_price = migrated_data_tokens ? migrated_data_tokens : 1; //非迁移价格1
     ret->refs = 1;
     return ret;
 error:
-    ring_add(&dev->write_bufs_pool, &ret->link);
+    ring_add(&dev->write_bufs_pool, &ret->link); //出错了直接放到写缓冲区池中
+    //这种错误处理挺好的，可以避免重复释放和分配
     return NULL;
 }
 
+// 从字符设备分配size大小的缓冲区，如果client为真，分配客户端类型的写入缓冲区
+// 如果client为空值，则分配服务端类型的写入缓冲区
 SpiceCharDeviceWriteBuffer *spice_char_device_write_buffer_get(SpiceCharDeviceState *dev,
                                                                RedClient *client,
                                                                int size)

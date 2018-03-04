@@ -414,6 +414,7 @@ struct SpiceCharDeviceInterface {
 
     void (*state)(SpiceCharDeviceInstance *sin, int connected);
     int (*write)(SpiceCharDeviceInstance *sin, const uint8_t *buf, int len);
+	//从字符设备读取
     int (*read)(SpiceCharDeviceInstance *sin, uint8_t *buf, int len);
     void (*event)(SpiceCharDeviceInstance *sin, uint8_t event);
 };

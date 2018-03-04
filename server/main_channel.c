@@ -60,22 +60,22 @@
 static uint8_t zero_page[ZERO_BUF_SIZE] = {0};
 
 enum {
-    PIPE_ITEM_TYPE_MAIN_CHANNELS_LIST = PIPE_ITEM_TYPE_CHANNEL_BASE,
-    PIPE_ITEM_TYPE_MAIN_PING,
-    PIPE_ITEM_TYPE_MAIN_MOUSE_MODE,
-    PIPE_ITEM_TYPE_MAIN_AGENT_DISCONNECTED,
-    PIPE_ITEM_TYPE_MAIN_AGENT_TOKEN,
-    PIPE_ITEM_TYPE_MAIN_AGENT_DATA,
-    PIPE_ITEM_TYPE_MAIN_MIGRATE_DATA,
-    PIPE_ITEM_TYPE_MAIN_INIT,
-    PIPE_ITEM_TYPE_MAIN_NOTIFY,
-    PIPE_ITEM_TYPE_MAIN_MIGRATE_BEGIN,
-    PIPE_ITEM_TYPE_MAIN_MIGRATE_BEGIN_SEAMLESS,
-    PIPE_ITEM_TYPE_MAIN_MIGRATE_SWITCH_HOST,
-    PIPE_ITEM_TYPE_MAIN_MULTI_MEDIA_TIME,
-    PIPE_ITEM_TYPE_MAIN_NAME,
-    PIPE_ITEM_TYPE_MAIN_UUID,
-    PIPE_ITEM_TYPE_MAIN_AGENT_CONNECTED_TOKENS,
+    PIPE_ITEM_TYPE_MAIN_CHANNELS_LIST = PIPE_ITEM_TYPE_CHANNEL_BASE, //通道列表管道项
+    PIPE_ITEM_TYPE_MAIN_PING, //PING消息管道项
+    PIPE_ITEM_TYPE_MAIN_MOUSE_MODE, //鼠标模式消息管道项
+    PIPE_ITEM_TYPE_MAIN_AGENT_DISCONNECTED, //agent断开管道项
+    PIPE_ITEM_TYPE_MAIN_AGENT_TOKEN, //agent令牌管道项
+    PIPE_ITEM_TYPE_MAIN_AGENT_DATA, //agent数据管道项
+    PIPE_ITEM_TYPE_MAIN_MIGRATE_DATA, //迁移数据管道项
+    PIPE_ITEM_TYPE_MAIN_INIT, //主通道初始化消息管道项，init的反馈消息
+    PIPE_ITEM_TYPE_MAIN_NOTIFY, //主通道通道消息管道项
+    PIPE_ITEM_TYPE_MAIN_MIGRATE_BEGIN, //迁移开始消息
+    PIPE_ITEM_TYPE_MAIN_MIGRATE_BEGIN_SEAMLESS, //无缝迁移开始消息
+    PIPE_ITEM_TYPE_MAIN_MIGRATE_SWITCH_HOST, //迁移切换主机
+    PIPE_ITEM_TYPE_MAIN_MULTI_MEDIA_TIME, //MM time时间消息
+    PIPE_ITEM_TYPE_MAIN_NAME, //名称消息
+    PIPE_ITEM_TYPE_MAIN_UUID, //UUID消息
+    PIPE_ITEM_TYPE_MAIN_AGENT_CONNECTED_TOKENS, //AGENT已连接令牌消息
 };
 
 typedef struct RedsOutItem RedsOutItem;
@@ -88,15 +88,17 @@ typedef struct RefsPipeItem {
     int *refs;
 } RefsPipeItem;
 
+// ping消息管道项结构
 typedef struct PingPipeItem {
     PipeItem base;
-    int size;
+    int size; //剩余空间
 } PingPipeItem;
 
+// 主通道发送的鼠标模式消息管道项
 typedef struct MouseModePipeItem {
     PipeItem base;
-    int current_mode;
-    int is_client_mouse_allowed;
+    int current_mode; //当前鼠标模式
+    int is_client_mouse_allowed; //是否支持客户端鼠标模式
 } MouseModePipeItem;
 
 typedef struct TokensPipeItem {
@@ -113,13 +115,13 @@ typedef struct AgentDataPipeItem {
 } AgentDataPipeItem;
 
 typedef struct InitPipeItem {
-    PipeItem base;
-    int connection_id;
-    int display_channels_hint;
-    int current_mouse_mode;
-    int is_client_mouse_allowed;
-    int multi_media_time;
-    int ram_hint;
+    PipeItem base; 
+    int connection_id; //返回连接id
+    int display_channels_hint; //显示通道提示
+    int current_mouse_mode; //当前鼠标模式
+    int is_client_mouse_allowed; //是否允许客户端鼠标模式
+    int multi_media_time; //初始mm事件
+    int ram_hint; //qxl显卡内存ram大小提示
 } InitPipeItem;
 
 typedef struct NamePipeItem {
@@ -142,24 +144,25 @@ typedef struct MultiMediaTimePipeItem {
     int time;
 } MultiMediaTimePipeItem;
 
+// MCC
 struct MainChannelClient {
-    RedChannelClient base;
-    uint32_t connection_id;
-    uint32_t ping_id;
-    uint32_t net_test_id;
-    int net_test_stage;
-    uint64_t latency;
-    uint64_t bitrate_per_sec;
+    RedChannelClient base; //RCC基础
+    uint32_t connection_id; //连接id，每次连接spice不一致
+    uint32_t ping_id; //ping消息id, 每次发送ping包都自增
+    uint32_t net_test_id; //网络测试id
+    int net_test_stage; //当前网络测试的阶段
+    uint64_t latency; //网络测试的延时
+    uint64_t bitrate_per_sec; //网络测试得到的带宽值
 #ifdef RED_STATISTICS
     SpiceTimer *ping_timer;
     int ping_interval;
 #endif
-    int mig_wait_connect;
-    int mig_connect_ok;
-    int mig_wait_prev_complete;
-    int mig_wait_prev_try_seamless;
-    int init_sent;
-    int seamless_mig_dst;
+    int mig_wait_connect; //迁移等待连接
+    int mig_connect_ok; //迁移连接成功
+    int mig_wait_prev_complete; //迁移等待前一个连接完成操作
+    int mig_wait_prev_try_seamless; //无缝迁移
+    int init_sent; //是否发送了init消息
+    int seamless_mig_dst; //无缝迁移目标
 };
 
 enum NetTestStage {
@@ -203,6 +206,7 @@ RedClient *main_channel_get_client_by_link_id(MainChannel *main_chan, uint32_t c
 
 static int main_channel_client_push_ping(MainChannelClient *mcc, int size);
 
+// 主通道开始网络测试
 void main_channel_client_start_net_test(MainChannelClient *mcc, int test_rate)
 {
     if (!mcc || mcc->net_test_id) {
@@ -220,6 +224,7 @@ void main_channel_client_start_net_test(MainChannelClient *mcc, int test_rate)
     }
 }
 
+//创建各种消息管道项
 typedef struct MainMouseModeItemInfo {
     int current_mode;
     int is_client_mouse_allowed;
@@ -334,7 +339,10 @@ static PipeItem *main_multi_media_time_item_new(
     item->time = info->time;
     return &item->base;
 }
+//各种主通道管道项创建函数结束
 
+
+// 往mcc中推送一个通道列表管道项
 static void main_channel_push_channels(MainChannelClient *mcc)
 {
     if (red_client_during_migrate_at_target(mcc->base.client)) {
@@ -345,6 +353,9 @@ static void main_channel_push_channels(MainChannelClient *mcc)
     red_channel_client_pipe_add_type(&mcc->base, PIPE_ITEM_TYPE_MAIN_CHANNELS_LIST);
 }
 
+
+
+// 调制主通道通道列表消息
 static void main_channel_marshall_channels(RedChannelClient *rcc,
                                            SpiceMarshaller *m,
                                            PipeItem *item)
@@ -354,6 +365,7 @@ static void main_channel_marshall_channels(RedChannelClient *rcc,
     red_channel_client_init_send_data(rcc, SPICE_MSG_MAIN_CHANNELS_LIST, item);
     channels_info = (SpiceMsgChannels *)spice_malloc(sizeof(SpiceMsgChannels)
                             + reds_num_of_channels() * sizeof(SpiceChannelId));
+	//填充通道信息
     reds_fill_channels(channels_info);
     spice_marshall_msg_main_channels_list(m, channels_info);
     free(channels_info);
@@ -383,6 +395,7 @@ static void main_channel_marshall_ping(RedChannelClient *rcc,
     red_channel_client_init_send_data(rcc, SPICE_MSG_PING, &item->base);
     ping.id = ++(mcc->ping_id);
     clock_gettime(CLOCK_MONOTONIC, &time_space);
+	//主通道的ping消息时间戳单位为微妙
     ping.timestamp = time_space.tv_sec * 1000000LL + time_space.tv_nsec / 1000LL;
     spice_marshall_msg_ping(m, &ping);
 
@@ -412,8 +425,8 @@ static void main_channel_marshall_mouse_mode(RedChannelClient *rcc,
     SpiceMsgMainMouseMode mouse_mode;
 
     red_channel_client_init_send_data(rcc, SPICE_MSG_MAIN_MOUSE_MODE, &item->base);
-    mouse_mode.supported_modes = SPICE_MOUSE_MODE_SERVER;
-    if (item->is_client_mouse_allowed) {
+    mouse_mode.supported_modes = SPICE_MOUSE_MODE_SERVER; //默认支持服务端鼠标模式
+    if (item->is_client_mouse_allowed) { //允许客户端鼠标模式
         mouse_mode.supported_modes |= SPICE_MOUSE_MODE_CLIENT;
     }
     mouse_mode.current_mode = item->current_mode;
@@ -524,6 +537,7 @@ static int main_channel_handle_migrate_data(RedChannelClient *rcc,
     return reds_handle_migrate_data(mcc, (SpiceMigrateDataMain *)(header + 1), size);
 }
 
+//OK
 void main_channel_push_init(MainChannelClient *mcc,
     int display_channels_hint, int current_mouse_mode,
     int is_client_mouse_allowed, int multi_media_time,
@@ -537,6 +551,7 @@ void main_channel_push_init(MainChannelClient *mcc,
     red_channel_client_pipe_add_push(&mcc->base, item);
 }
 
+//OK
 static void main_channel_marshall_init(RedChannelClient *rcc,
                                        SpiceMarshaller *m,
                                        InitPipeItem *item)
@@ -553,12 +568,13 @@ static void main_channel_marshall_init(RedChannelClient *rcc,
         init.supported_mouse_modes |= SPICE_MOUSE_MODE_CLIENT;
     }
     init.agent_connected = reds_has_vdagent();
-    init.agent_tokens = REDS_AGENT_WINDOW_SIZE;
-    init.multi_media_time = item->multi_media_time;
+    init.agent_tokens = REDS_AGENT_WINDOW_SIZE; //agent初始令牌大小
+    init.multi_media_time = item->multi_media_time; 
     init.ram_hint = item->ram_hint;
     spice_marshall_msg_main_init(m, &init);
 }
 
+//OK
 void main_channel_push_name(MainChannelClient *mcc, const char *name)
 {
     PipeItem *item;
@@ -571,6 +587,7 @@ void main_channel_push_name(MainChannelClient *mcc, const char *name)
     red_channel_client_pipe_add_push(&mcc->base, item);
 }
 
+//OK
 void main_channel_push_uuid(MainChannelClient *mcc, const uint8_t uuid[16])
 {
     PipeItem *item;
@@ -582,6 +599,7 @@ void main_channel_push_uuid(MainChannelClient *mcc, const uint8_t uuid[16])
     item = main_uuid_item_new(mcc, uuid);
     red_channel_client_pipe_add_push(&mcc->base, item);
 }
+
 
 void main_channel_push_notify(MainChannel *main_chan, const char *msg)
 {
@@ -725,6 +743,7 @@ static void main_channel_marshall_multi_media_time(RedChannelClient *rcc,
     spice_marshall_msg_main_multi_media_time(m, &time_mes);
 }
 
+// 主通道消息发送函数
 static void main_channel_send_item(RedChannelClient *rcc, PipeItem *base)
 {
     MainChannelClient *mcc = SPICE_CONTAINEROF(rcc, MainChannelClient, base);
@@ -896,6 +915,7 @@ void main_channel_migrate_dst_complete(MainChannelClient *mcc)
     }
 }
 
+// 主通道消息处理函数
 static int main_channel_handle_parsed(RedChannelClient *rcc, uint32_t size, uint16_t type,
                                       void *message)
 {
@@ -925,6 +945,7 @@ static int main_channel_handle_parsed(RedChannelClient *rcc, uint32_t size, uint
         reds_on_main_agent_tokens(mcc, tokens->num_tokens);
         break;
     }
+	//服务端收到
     case SPICE_MSGC_MAIN_ATTACH_CHANNELS:
         main_channel_push_channels(mcc);
         break;
@@ -1021,6 +1042,7 @@ static int main_channel_handle_parsed(RedChannelClient *rcc, uint32_t size, uint
     return TRUE;
 }
 
+// 分配主通道的消息接收缓冲区
 static uint8_t *main_channel_alloc_msg_rcv_buf(RedChannelClient *rcc,
                                                uint16_t type,
                                                uint32_t size)
@@ -1187,6 +1209,7 @@ static void main_channel_client_migrate(RedChannelClient *rcc)
     red_channel_client_default_migrate(rcc);
 }
 
+// 主通道初始化，虚拟机启动时运行
 MainChannel* main_channel_init(void)
 {
     RedChannel *channel;

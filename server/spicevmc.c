@@ -42,22 +42,25 @@
 /* 64K should be enough for all but the largest writes + 32 bytes hdr */
 #define BUF_SIZE (64 * 1024 + 32)
 
+// SpiceVmc管道项，因为只有数据，所以只有一个缓冲区
 typedef struct SpiceVmcPipeItem {
     PipeItem base;
     uint32_t refs;
 
     /* writes which don't fit this will get split, this is not a problem */
-    uint8_t buf[BUF_SIZE];
+    uint8_t buf[BUF_SIZE]; /* 字符设备32字节头部 + 最多64K数据 */
     uint32_t buf_used;
 } SpiceVmcPipeItem;
 
+// SpiceVmcState直接包含一个通道对象
 typedef struct SpiceVmcState {
     RedChannel channel; /* Must be the first item */
-    RedChannelClient *rcc;
-    SpiceCharDeviceState *chardev_st;
-    SpiceCharDeviceInstance *chardev_sin;
-    SpiceVmcPipeItem *pipe_item;
-    SpiceCharDeviceWriteBuffer *recv_from_client_buf;
+    RedChannelClient *rcc; //只能支持一个客户端连接，所以直接存放RCC
+    SpiceCharDeviceState *chardev_st; //字符设备结构体指针
+    SpiceCharDeviceInstance *chardev_sin; //保存实例指针
+    SpiceVmcPipeItem *pipe_item; //缓存VPI用于下次读取数据时使用
+    SpiceCharDeviceWriteBuffer *recv_from_client_buf; //字符设备的写入缓冲区，
+    //就是vmc从客户端直接接受数据的缓冲区，接受的数据直接放到字符设备写入缓冲区
     uint8_t port_opened;
 } SpiceVmcState;
 
@@ -73,18 +76,20 @@ typedef struct PortEventPipeItem {
 } PortEventPipeItem;
 
 enum {
-    PIPE_ITEM_TYPE_SPICEVMC_DATA = PIPE_ITEM_TYPE_CHANNEL_BASE,
-    PIPE_ITEM_TYPE_SPICEVMC_MIGRATE_DATA,
-    PIPE_ITEM_TYPE_PORT_INIT,
-    PIPE_ITEM_TYPE_PORT_EVENT,
+    PIPE_ITEM_TYPE_SPICEVMC_DATA = PIPE_ITEM_TYPE_CHANNEL_BASE, //数据管道项
+    PIPE_ITEM_TYPE_SPICEVMC_MIGRATE_DATA, //迁移数据管道项
+    PIPE_ITEM_TYPE_PORT_INIT, //PORT初始化管道项
+    PIPE_ITEM_TYPE_PORT_EVENT, //端口事件管道项
 };
 
+//VPI引用
 static SpiceVmcPipeItem *spicevmc_pipe_item_ref(SpiceVmcPipeItem *item)
 {
     item->refs++;
     return item;
 }
 
+//VPI解引用，最后会释放item
 static void spicevmc_pipe_item_unref(SpiceVmcPipeItem *item)
 {
     if (!--item->refs) {
@@ -92,20 +97,28 @@ static void spicevmc_pipe_item_unref(SpiceVmcPipeItem *item)
     }
 }
 
+//服务端消息引用
 SpiceCharDeviceMsgToClient *spicevmc_chardev_ref_msg_to_client(SpiceCharDeviceMsgToClient *msg,
                                                                void *opaque)
 {
     return spicevmc_pipe_item_ref((SpiceVmcPipeItem *)msg);
 }
 
+//服务端消息解引用
 static void spicevmc_chardev_unref_msg_to_client(SpiceCharDeviceMsgToClient *msg,
                                                  void *opaque)
 {
     spicevmc_pipe_item_unref((SpiceVmcPipeItem *)msg);
 }
 
-static SpiceCharDeviceMsgToClient *spicevmc_chardev_read_msg_from_dev(SpiceCharDeviceInstance *sin,
-                                                                      void *opaque)
+/**
+ * spicevmc_chardev_read_msg_from_dev - 从字符设备里把数据读取到缓冲区里
+ * 返回void 指针，vmc里返回的就是VPI的地址。也就是说
+ * sin spice字符设备实例
+ * opaque 占位指针，在vmc字符设备里就是VS（SpiceVmcState）指针
+**/
+static SpiceCharDeviceMsgToClient *
+spicevmc_chardev_read_msg_from_dev(SpiceCharDeviceInstance *sin, void *opaque)
 {
     SpiceVmcState *state = opaque;
     SpiceCharDeviceInterface *sif;
@@ -114,33 +127,37 @@ static SpiceCharDeviceMsgToClient *spicevmc_chardev_read_msg_from_dev(SpiceCharD
 
     sif = SPICE_CONTAINEROF(sin->base.sif, SpiceCharDeviceInterface, base);
 
-    if (!state->rcc) {
+    if (!state->rcc) { //未连接，则返回空消息
         return NULL;
     }
-
-    if (!state->pipe_item) {
+	/* state-pipe_item是缓冲的管道项，从字符设备读数据失败时，会缓存下来*/
+    if (!state->pipe_item) {//没有管道项，先新建一个管道项
         msg_item = spice_new0(SpiceVmcPipeItem, 1);
         msg_item->refs = 1;
         red_channel_pipe_item_init(&state->channel,
                                    &msg_item->base, PIPE_ITEM_TYPE_SPICEVMC_DATA);
     } else {
-        spice_assert(state->pipe_item->buf_used == 0);
+		/* 缓存的VPI一定没有有效数据 */
+        spice_assert(state->pipe_item->buf_used == 0); 
         msg_item = state->pipe_item;
+		/* 取出VPI后置空缓存VPI指针 */
         state->pipe_item = NULL;
     }
 
+	/* 从字符设备的读取数据 */
     n = sif->read(sin, msg_item->buf,
                   sizeof(msg_item->buf));
     if (n > 0) {
         spice_debug("read from dev %d", n);
         msg_item->buf_used = n;
         return msg_item;
-    } else {
+    } else { //读取失败返回
         state->pipe_item = msg_item;
         return NULL;
     }
 }
 
+// 将服务端消息发给制定
 static void spicevmc_chardev_send_msg_to_client(SpiceCharDeviceMsgToClient *msg,
                                                  RedClient *client,
                                                  void *opaque)
@@ -243,6 +260,7 @@ static void spicevmc_red_channel_client_on_disconnect(RedChannelClient *rcc)
     }
 }
 
+// RCC 转SpiceVmcState
 static SpiceVmcState *spicevmc_red_channel_client_get_state(RedChannelClient *rcc)
 {
     return SPICE_CONTAINEROF(rcc->channel, SpiceVmcState, channel);
@@ -276,6 +294,7 @@ static int spicevmc_channel_client_handle_migrate_data(RedChannelClient *rcc,
     return spice_char_device_state_restore(state->chardev_st, &mig_data->base);
 }
 
+// 默认的消息分发函数
 static int spicevmc_red_channel_client_handle_message(RedChannelClient *rcc,
                                                       uint16_t type,
                                                       uint32_t size,
@@ -311,6 +330,8 @@ static int spicevmc_red_channel_client_handle_message(RedChannelClient *rcc,
     return TRUE;
 }
 
+// 为type类型的消息分配size大小的接收缓冲区。
+// 该函数触发了两块堆内存的分配。
 static uint8_t *spicevmc_red_channel_alloc_msg_rcv_buf(RedChannelClient *rcc,
                                                        uint16_t type,
                                                        uint32_t size)
@@ -321,8 +342,8 @@ static uint8_t *spicevmc_red_channel_alloc_msg_rcv_buf(RedChannelClient *rcc,
 
     switch (type) {
     case SPICE_MSGC_SPICEVMC_DATA:
-        assert(!state->recv_from_client_buf);
-
+        assert(!state->recv_from_client_buf); //要求接受缓冲区为空
+		//调用字符设备结构获取接受缓冲区内存
         state->recv_from_client_buf = spice_char_device_write_buffer_get(state->chardev_st,
                                                                          rcc->client,
                                                                          size);
@@ -330,7 +351,7 @@ static uint8_t *spicevmc_red_channel_alloc_msg_rcv_buf(RedChannelClient *rcc,
             spice_error("failed to allocate write buffer");
             return NULL;
         }
-        return state->recv_from_client_buf->buf;
+        return state->recv_from_client_buf->buf; //这块内存是接收消息的实际存放地方
 
     default:
         return spice_malloc(size);
@@ -338,6 +359,7 @@ static uint8_t *spicevmc_red_channel_alloc_msg_rcv_buf(RedChannelClient *rcc,
 
 }
 
+// 为type类型的
 static void spicevmc_red_channel_release_msg_rcv_buf(RedChannelClient *rcc,
                                                      uint16_t type,
                                                      uint32_t size,
@@ -359,12 +381,14 @@ static void spicevmc_red_channel_release_msg_rcv_buf(RedChannelClient *rcc,
     }
 }
 
+//初始化rcc的send_data时会调用hold_item接口
 static void spicevmc_red_channel_hold_pipe_item(RedChannelClient *rcc,
     PipeItem *item)
 {
     /* NOOP */
 }
 
+// spicevmc发送usb映射数据
 static void spicevmc_red_channel_send_data(RedChannelClient *rcc,
                                            SpiceMarshaller *m,
                                            PipeItem *item)
@@ -451,6 +475,7 @@ static void spicevmc_red_channel_release_pipe_item(RedChannelClient *rcc,
     }
 }
 
+// 通道连接时的回调函数
 static void spicevmc_connect(RedChannel *channel, RedClient *client,
     RedsStream *stream, int migration, int num_common_caps,
     uint32_t *common_caps, int num_caps, uint32_t *caps)
@@ -499,10 +524,11 @@ static void spicevmc_connect(RedChannel *channel, RedClient *client,
     }
 }
 
+// 模块入口函数，虚拟机启动时执行
 SpiceCharDeviceState *spicevmc_device_connect(SpiceCharDeviceInstance *sin,
                                               uint8_t channel_type)
 {
-    static uint8_t id[256] = { 0, };
+    static uint8_t id[256] = { 0, };//每次通道创建都会增加一个id值，从0开始
     SpiceVmcState *state;
     ChannelCbs channel_cbs = { NULL, };
     ClientCbs client_cbs = { NULL, };
@@ -510,7 +536,7 @@ SpiceCharDeviceState *spicevmc_device_connect(SpiceCharDeviceInstance *sin,
 
     channel_cbs.config_socket = spicevmc_red_channel_client_config_socket;
     channel_cbs.on_disconnect = spicevmc_red_channel_client_on_disconnect;
-    channel_cbs.send_item = spicevmc_red_channel_send_item;
+    channel_cbs.send_item = spicevmc_red_channel_send_item; //怎么发送管道项
     channel_cbs.hold_item = spicevmc_red_channel_hold_pipe_item;
     channel_cbs.release_item = spicevmc_red_channel_release_pipe_item;
     channel_cbs.alloc_recv_buf = spicevmc_red_channel_alloc_msg_rcv_buf;
@@ -518,10 +544,12 @@ SpiceCharDeviceState *spicevmc_device_connect(SpiceCharDeviceInstance *sin,
     channel_cbs.handle_migrate_flush_mark = spicevmc_channel_client_handle_migrate_flush_mark;
     channel_cbs.handle_migrate_data = spicevmc_channel_client_handle_migrate_data;
 
+	// SpiceVmcState是RedChannel的子类，core在reds.h中声明，在reds.c中定义
+	// 通道类型，自然是usb映射，没记错的话VDI里是9，id从静态变量自增，
     state = (SpiceVmcState*)red_channel_create(sizeof(SpiceVmcState),
                                    core, channel_type, id[channel_type]++,
-                                   FALSE /* handle_acks */,
-                                   spicevmc_red_channel_client_handle_message,
+                                   FALSE /* handle_acks， 不做ack控制流控*/,
+                                   spicevmc_red_channel_client_handle_message, //默认的消息分发
                                    &channel_cbs,
                                    SPICE_MIGRATE_NEED_FLUSH | SPICE_MIGRATE_NEED_DATA_TRANSFER);
     red_channel_init_outgoing_messages_window(&state->channel);

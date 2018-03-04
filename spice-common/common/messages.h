@@ -143,15 +143,16 @@ typedef struct SpiceChannelId {
     uint8_t id;
 } SpiceChannelId;
 
+//主通道服务端发送的初始化消息，也就是客户端初始化消息的响应
 typedef struct SpiceMsgMainInit {
-    uint32_t session_id;
-    uint32_t display_channels_hint;
-    uint32_t supported_mouse_modes;
-    uint32_t current_mouse_mode;
-    uint32_t agent_connected;
-    uint32_t agent_tokens;
-    uint32_t multi_media_time;
-    uint32_t ram_hint;
+    uint32_t session_id; //回话id
+    uint32_t display_channels_hint; //显示通道提示
+    uint32_t supported_mouse_modes; //支持的鼠标模式
+    uint32_t current_mouse_mode; //当前使用的鼠标模式
+    uint32_t agent_connected; //agent是否已经连接
+    uint32_t agent_tokens; //agent令牌数量
+    uint32_t multi_media_time; //mm时间
+    uint32_t ram_hint; //ram提示
 } SpiceMsgMainInit;
 
 typedef struct SpiceMsgDisconnect {
@@ -168,6 +169,7 @@ typedef struct SpiceMsgNotify {
     uint8_t message[0];
 } SpiceMsgNotify;
 
+// 通道列表消息
 typedef struct SpiceMsgChannels {
     uint32_t num_of_channels;
     SpiceChannelId channels[0];
@@ -182,16 +184,18 @@ typedef struct SpiceMsgMainUuid {
     uint8_t uuid[16];
 } SpiceMsgMainUuid;
 
+// 主通道发送的鼠标模式消息
 typedef struct SpiceMsgMainMouseMode {
-    uint32_t supported_modes;
-    uint32_t current_mode;
+    uint32_t supported_modes; //服务端支持哪些鼠标模式
+    uint32_t current_mode; //当前使用的鼠标模式
 } SpiceMsgMainMouseMode;
 
+// 服务端发送的ping消息
 typedef struct SpiceMsgPing {
-    uint32_t id;
-    uint64_t timestamp;
-    void *data;
-    uint32_t data_len;
+    uint32_t id; //ping消息id
+    uint64_t timestamp; //时间戳，单位微妙
+    void *data; //附加数据
+    uint32_t data_len; //数据长度
 } SpiceMsgPing;
 
 typedef struct SpiceMsgMainAgentDisconnect {
@@ -221,7 +225,6 @@ typedef struct SpiceCursor {
     uint8_t *data;
 } SpiceCursor;
 
-//
 typedef struct SpiceMsgDisplayMode {
     uint32_t x_res;
     uint32_t y_res;
@@ -354,8 +357,9 @@ typedef struct SpiceMsgDisplayStreamDataSized {
     uint8_t data[0];
 } SpiceMsgDisplayStreamDataSized;
 
+// 重新对一条流进行裁剪
 typedef struct SpiceMsgDisplayStreamClip {
-    uint32_t id; //流id
+    uint32_t id; //对哪个流id进行裁剪
     SpiceClip clip; //裁剪区域
 } SpiceMsgDisplayStreamClip;
 

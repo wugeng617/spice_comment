@@ -64,20 +64,21 @@
 
 /* buffer that is used for writing to the device */
 typedef struct SpiceCharDeviceWriteBuffer {
-    RingItem link;
-    int origin;
+    RingItem link; //接入字符设备缓冲区池
+    int origin; //为什么创建，因为什么创建的写缓冲区，NONE、CLIENT、SERVER、SERVER_NO_TOKEN
     RedClient *client; /* The client that sent the message to the device.
                           NULL if the server created the message */
 
-    uint8_t *buf;
-    uint32_t buf_size;
-    uint32_t buf_used;
-    uint32_t token_price;
-    uint32_t refs;
+    uint8_t *buf; //缓冲区内存地址
+    uint32_t buf_size; //缓冲区可用空间大小
+    uint32_t buf_used; //当前已使用的缓冲区的数量
+    uint32_t token_price; //令牌价格，估计是个权值
+    uint32_t refs; //写缓冲区引用计数
 } SpiceCharDeviceWriteBuffer;
 
-typedef void SpiceCharDeviceMsgToClient;
+typedef void SpiceCharDeviceMsgToClient; //字符设备发送给客户端的消息，vmc里就是SpiceVmcPipeItem
 
+// spice字符设备回调函数
 typedef struct SpiceCharDeviceCallbacks {
     /*
      * Messages that are addressed to the client can be queued in case we have
@@ -85,19 +86,27 @@ typedef struct SpiceCharDeviceCallbacks {
      */
 
     /* reads from the device till reaching a msg that should be sent to the client,
-     * or till the reading fails */
+     * or till the reading fails 
+     * 怎样从字符设备读取一条发送给客户端的消息，返回的是从字符设备读取数据的结果指针
+     * 读取失败时返回NULL 
+	 */
     SpiceCharDeviceMsgToClient* (*read_one_msg_from_device)(SpiceCharDeviceInstance *sin,
                                                             void *opaque);
+	/* 对发送消息进行引用的接口 */
     SpiceCharDeviceMsgToClient* (*ref_msg_to_client)(SpiceCharDeviceMsgToClient *msg,
                                                      void *opaque);
+	/* 对发送消息进行解引用的接口 */
     void (*unref_msg_to_client)(SpiceCharDeviceMsgToClient *msg,
                                 void *opaque);
+	/* 将发送消息发送给指定客户端的接口 */
     void (*send_msg_to_client)(SpiceCharDeviceMsgToClient *msg,
                                RedClient *client,
                                void *opaque); /* after this call, the message is unreferenced */
 
     /* The cb is called when a predefined number of write buffers were consumed by the
-     * device */
+     * device 
+     * 当一定数量的写缓冲区被设备消耗后，调用此接口告诉客户端
+     */
     void (*send_tokens_to_client)(RedClient *client, uint32_t tokens, void *opaque);
 
     /* The cb is called when a server (self) message that was addressed to the device,
