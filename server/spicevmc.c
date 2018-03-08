@@ -42,25 +42,25 @@
 /* 64K should be enough for all but the largest writes + 32 bytes hdr */
 #define BUF_SIZE (64 * 1024 + 32)
 
-// SpiceVmc¹ÜµÀÏî£¬ÒòÎªÖ»ÓĞÊı¾İ£¬ËùÒÔÖ»ÓĞÒ»¸ö»º³åÇø
+// SpiceVmcç®¡é“é¡¹ï¼Œå› ä¸ºåªæœ‰æ•°æ®ï¼Œæ‰€ä»¥åªæœ‰ä¸€ä¸ªç¼“å†²åŒº
 typedef struct SpiceVmcPipeItem {
     PipeItem base;
     uint32_t refs;
 
     /* writes which don't fit this will get split, this is not a problem */
-    uint8_t buf[BUF_SIZE]; /* ×Ö·ûÉè±¸32×Ö½ÚÍ·²¿ + ×î¶à64KÊı¾İ */
+    uint8_t buf[BUF_SIZE]; /* å­—ç¬¦è®¾å¤‡32å­—èŠ‚å¤´éƒ¨ + æœ€å¤š64Kæ•°æ® */
     uint32_t buf_used;
 } SpiceVmcPipeItem;
 
-// SpiceVmcStateÖ±½Ó°üº¬Ò»¸öÍ¨µÀ¶ÔÏó
+// SpiceVmcStateç›´æ¥åŒ…å«ä¸€ä¸ªé€šé“å¯¹è±¡
 typedef struct SpiceVmcState {
     RedChannel channel; /* Must be the first item */
-    RedChannelClient *rcc; //Ö»ÄÜÖ§³ÖÒ»¸ö¿Í»§¶ËÁ¬½Ó£¬ËùÒÔÖ±½Ó´æ·ÅRCC
-    SpiceCharDeviceState *chardev_st; //×Ö·ûÉè±¸½á¹¹ÌåÖ¸Õë
-    SpiceCharDeviceInstance *chardev_sin; //±£´æÊµÀıÖ¸Õë
-    SpiceVmcPipeItem *pipe_item; //»º´æVPIÓÃÓÚÏÂ´Î¶ÁÈ¡Êı¾İÊ±Ê¹ÓÃ
-    SpiceCharDeviceWriteBuffer *recv_from_client_buf; //×Ö·ûÉè±¸µÄĞ´Èë»º³åÇø£¬
-    //¾ÍÊÇvmc´Ó¿Í»§¶ËÖ±½Ó½ÓÊÜÊı¾İµÄ»º³åÇø£¬½ÓÊÜµÄÊı¾İÖ±½Ó·Åµ½×Ö·ûÉè±¸Ğ´Èë»º³åÇø
+    RedChannelClient *rcc; //åªèƒ½æ”¯æŒä¸€ä¸ªå®¢æˆ·ç«¯è¿æ¥ï¼Œæ‰€ä»¥ç›´æ¥å­˜æ”¾RCC
+    SpiceCharDeviceState *chardev_st; //å­—ç¬¦è®¾å¤‡ç»“æ„ä½“æŒ‡é’ˆ
+    SpiceCharDeviceInstance *chardev_sin; //ä¿å­˜å®ä¾‹æŒ‡é’ˆ
+    SpiceVmcPipeItem *pipe_item; //ç¼“å­˜VPIç”¨äºä¸‹æ¬¡è¯»å–æ•°æ®æ—¶ä½¿ç”¨
+    SpiceCharDeviceWriteBuffer *recv_from_client_buf; //å­—ç¬¦è®¾å¤‡çš„å†™å…¥ç¼“å†²åŒºï¼Œ
+    //å°±æ˜¯vmcä»å®¢æˆ·ç«¯ç›´æ¥æ¥å—æ•°æ®çš„ç¼“å†²åŒºï¼Œæ¥å—çš„æ•°æ®ç›´æ¥æ”¾åˆ°å­—ç¬¦è®¾å¤‡å†™å…¥ç¼“å†²åŒº
     uint8_t port_opened;
 } SpiceVmcState;
 
@@ -76,20 +76,20 @@ typedef struct PortEventPipeItem {
 } PortEventPipeItem;
 
 enum {
-    PIPE_ITEM_TYPE_SPICEVMC_DATA = PIPE_ITEM_TYPE_CHANNEL_BASE, //Êı¾İ¹ÜµÀÏî
-    PIPE_ITEM_TYPE_SPICEVMC_MIGRATE_DATA, //Ç¨ÒÆÊı¾İ¹ÜµÀÏî
-    PIPE_ITEM_TYPE_PORT_INIT, //PORT³õÊ¼»¯¹ÜµÀÏî
-    PIPE_ITEM_TYPE_PORT_EVENT, //¶Ë¿ÚÊÂ¼ş¹ÜµÀÏî
+    PIPE_ITEM_TYPE_SPICEVMC_DATA = PIPE_ITEM_TYPE_CHANNEL_BASE, //æ•°æ®ç®¡é“é¡¹
+    PIPE_ITEM_TYPE_SPICEVMC_MIGRATE_DATA, //è¿ç§»æ•°æ®ç®¡é“é¡¹
+    PIPE_ITEM_TYPE_PORT_INIT, //PORTåˆå§‹åŒ–ç®¡é“é¡¹
+    PIPE_ITEM_TYPE_PORT_EVENT, //ç«¯å£äº‹ä»¶ç®¡é“é¡¹
 };
 
-//VPIÒıÓÃ
+//VPIå¼•ç”¨
 static SpiceVmcPipeItem *spicevmc_pipe_item_ref(SpiceVmcPipeItem *item)
 {
     item->refs++;
     return item;
 }
 
-//VPI½âÒıÓÃ£¬×îºó»áÊÍ·Åitem
+//VPIè§£å¼•ç”¨ï¼Œæœ€åä¼šé‡Šæ”¾item
 static void spicevmc_pipe_item_unref(SpiceVmcPipeItem *item)
 {
     if (!--item->refs) {
@@ -97,14 +97,14 @@ static void spicevmc_pipe_item_unref(SpiceVmcPipeItem *item)
     }
 }
 
-//·şÎñ¶ËÏûÏ¢ÒıÓÃ
+//æœåŠ¡ç«¯æ¶ˆæ¯å¼•ç”¨
 SpiceCharDeviceMsgToClient *spicevmc_chardev_ref_msg_to_client(SpiceCharDeviceMsgToClient *msg,
                                                                void *opaque)
 {
     return spicevmc_pipe_item_ref((SpiceVmcPipeItem *)msg);
 }
 
-//·şÎñ¶ËÏûÏ¢½âÒıÓÃ
+//æœåŠ¡ç«¯æ¶ˆæ¯è§£å¼•ç”¨
 static void spicevmc_chardev_unref_msg_to_client(SpiceCharDeviceMsgToClient *msg,
                                                  void *opaque)
 {
@@ -112,10 +112,10 @@ static void spicevmc_chardev_unref_msg_to_client(SpiceCharDeviceMsgToClient *msg
 }
 
 /**
- * spicevmc_chardev_read_msg_from_dev - ´Ó×Ö·ûÉè±¸Àï°ÑÊı¾İ¶ÁÈ¡µ½»º³åÇøÀï
- * ·µ»Øvoid Ö¸Õë£¬vmcÀï·µ»ØµÄ¾ÍÊÇVPIµÄµØÖ·¡£Ò²¾ÍÊÇËµ
- * sin spice×Ö·ûÉè±¸ÊµÀı
- * opaque Õ¼Î»Ö¸Õë£¬ÔÚvmc×Ö·ûÉè±¸Àï¾ÍÊÇVS£¨SpiceVmcState£©Ö¸Õë
+ * spicevmc_chardev_read_msg_from_dev - ä»å­—ç¬¦è®¾å¤‡é‡ŒæŠŠæ•°æ®è¯»å–åˆ°ç¼“å†²åŒºé‡Œ
+ * è¿”å›void æŒ‡é’ˆï¼Œvmcé‡Œè¿”å›çš„å°±æ˜¯VPIçš„åœ°å€ã€‚ä¹Ÿå°±æ˜¯è¯´
+ * sin spiceå­—ç¬¦è®¾å¤‡å®ä¾‹
+ * opaque å ä½æŒ‡é’ˆï¼Œåœ¨vmcå­—ç¬¦è®¾å¤‡é‡Œå°±æ˜¯VSï¼ˆSpiceVmcStateï¼‰æŒ‡é’ˆ
 **/
 static SpiceCharDeviceMsgToClient *
 spicevmc_chardev_read_msg_from_dev(SpiceCharDeviceInstance *sin, void *opaque)
@@ -127,37 +127,37 @@ spicevmc_chardev_read_msg_from_dev(SpiceCharDeviceInstance *sin, void *opaque)
 
     sif = SPICE_CONTAINEROF(sin->base.sif, SpiceCharDeviceInterface, base);
 
-    if (!state->rcc) { //Î´Á¬½Ó£¬Ôò·µ»Ø¿ÕÏûÏ¢
+    if (!state->rcc) { //æœªè¿æ¥ï¼Œåˆ™è¿”å›ç©ºæ¶ˆæ¯
         return NULL;
     }
-	/* state-pipe_itemÊÇ»º³åµÄ¹ÜµÀÏî£¬´Ó×Ö·ûÉè±¸¶ÁÊı¾İÊ§°ÜÊ±£¬»á»º´æÏÂÀ´*/
-    if (!state->pipe_item) {//Ã»ÓĞ¹ÜµÀÏî£¬ÏÈĞÂ½¨Ò»¸ö¹ÜµÀÏî
+	/* state-pipe_itemæ˜¯ç¼“å†²çš„ç®¡é“é¡¹ï¼Œä»å­—ç¬¦è®¾å¤‡è¯»æ•°æ®å¤±è´¥æ—¶ï¼Œä¼šç¼“å­˜ä¸‹æ¥*/
+    if (!state->pipe_item) {//æ²¡æœ‰ç®¡é“é¡¹ï¼Œå…ˆæ–°å»ºä¸€ä¸ªç®¡é“é¡¹
         msg_item = spice_new0(SpiceVmcPipeItem, 1);
         msg_item->refs = 1;
         red_channel_pipe_item_init(&state->channel,
                                    &msg_item->base, PIPE_ITEM_TYPE_SPICEVMC_DATA);
     } else {
-		/* »º´æµÄVPIÒ»¶¨Ã»ÓĞÓĞĞ§Êı¾İ */
+		/* ç¼“å­˜çš„VPIä¸€å®šæ²¡æœ‰æœ‰æ•ˆæ•°æ® */
         spice_assert(state->pipe_item->buf_used == 0); 
         msg_item = state->pipe_item;
-		/* È¡³öVPIºóÖÃ¿Õ»º´æVPIÖ¸Õë */
+		/* å–å‡ºVPIåç½®ç©ºç¼“å­˜VPIæŒ‡é’ˆ */
         state->pipe_item = NULL;
     }
 
-	/* ´Ó×Ö·ûÉè±¸µÄ¶ÁÈ¡Êı¾İ */
+	/* ä»å­—ç¬¦è®¾å¤‡çš„è¯»å–æ•°æ® */
     n = sif->read(sin, msg_item->buf,
                   sizeof(msg_item->buf));
     if (n > 0) {
         spice_debug("read from dev %d", n);
         msg_item->buf_used = n;
         return msg_item;
-    } else { //¶ÁÈ¡Ê§°Ü·µ»Ø
+    } else { //è¯»å–å¤±è´¥è¿”å›
         state->pipe_item = msg_item;
         return NULL;
     }
 }
 
-// ½«·şÎñ¶ËÏûÏ¢·¢¸øÖÆ¶¨
+// å°†æœåŠ¡ç«¯æ¶ˆæ¯å‘ç»™åˆ¶å®š
 static void spicevmc_chardev_send_msg_to_client(SpiceCharDeviceMsgToClient *msg,
                                                  RedClient *client,
                                                  void *opaque)
@@ -260,7 +260,7 @@ static void spicevmc_red_channel_client_on_disconnect(RedChannelClient *rcc)
     }
 }
 
-// RCC ×ªSpiceVmcState
+// RCC è½¬SpiceVmcState
 static SpiceVmcState *spicevmc_red_channel_client_get_state(RedChannelClient *rcc)
 {
     return SPICE_CONTAINEROF(rcc->channel, SpiceVmcState, channel);
@@ -294,7 +294,7 @@ static int spicevmc_channel_client_handle_migrate_data(RedChannelClient *rcc,
     return spice_char_device_state_restore(state->chardev_st, &mig_data->base);
 }
 
-// Ä¬ÈÏµÄÏûÏ¢·Ö·¢º¯Êı
+// é»˜è®¤çš„æ¶ˆæ¯åˆ†å‘å‡½æ•°
 static int spicevmc_red_channel_client_handle_message(RedChannelClient *rcc,
                                                       uint16_t type,
                                                       uint32_t size,
@@ -330,8 +330,8 @@ static int spicevmc_red_channel_client_handle_message(RedChannelClient *rcc,
     return TRUE;
 }
 
-// ÎªtypeÀàĞÍµÄÏûÏ¢·ÖÅäsize´óĞ¡µÄ½ÓÊÕ»º³åÇø¡£
-// ¸Ãº¯Êı´¥·¢ÁËÁ½¿é¶ÑÄÚ´æµÄ·ÖÅä¡£
+// ä¸ºtypeç±»å‹çš„æ¶ˆæ¯åˆ†é…sizeå¤§å°çš„æ¥æ”¶ç¼“å†²åŒºã€‚
+// è¯¥å‡½æ•°è§¦å‘äº†ä¸¤å—å †å†…å­˜çš„åˆ†é…ã€‚
 static uint8_t *spicevmc_red_channel_alloc_msg_rcv_buf(RedChannelClient *rcc,
                                                        uint16_t type,
                                                        uint32_t size)
@@ -342,8 +342,8 @@ static uint8_t *spicevmc_red_channel_alloc_msg_rcv_buf(RedChannelClient *rcc,
 
     switch (type) {
     case SPICE_MSGC_SPICEVMC_DATA:
-        assert(!state->recv_from_client_buf); //ÒªÇó½ÓÊÜ»º³åÇøÎª¿Õ
-		//µ÷ÓÃ×Ö·ûÉè±¸½á¹¹»ñÈ¡½ÓÊÜ»º³åÇøÄÚ´æ
+        assert(!state->recv_from_client_buf); //è¦æ±‚æ¥å—ç¼“å†²åŒºä¸ºç©º
+		//è°ƒç”¨å­—ç¬¦è®¾å¤‡ç»“æ„è·å–æ¥å—ç¼“å†²åŒºå†…å­˜
         state->recv_from_client_buf = spice_char_device_write_buffer_get(state->chardev_st,
                                                                          rcc->client,
                                                                          size);
@@ -351,7 +351,7 @@ static uint8_t *spicevmc_red_channel_alloc_msg_rcv_buf(RedChannelClient *rcc,
             spice_error("failed to allocate write buffer");
             return NULL;
         }
-        return state->recv_from_client_buf->buf; //Õâ¿éÄÚ´æÊÇ½ÓÊÕÏûÏ¢µÄÊµ¼Ê´æ·ÅµØ·½
+        return state->recv_from_client_buf->buf; //è¿™å—å†…å­˜æ˜¯æ¥æ”¶æ¶ˆæ¯çš„å®é™…å­˜æ”¾åœ°æ–¹
 
     default:
         return spice_malloc(size);
@@ -359,7 +359,7 @@ static uint8_t *spicevmc_red_channel_alloc_msg_rcv_buf(RedChannelClient *rcc,
 
 }
 
-// ÎªtypeÀàĞÍµÄ
+// ä¸ºtypeç±»å‹çš„
 static void spicevmc_red_channel_release_msg_rcv_buf(RedChannelClient *rcc,
                                                      uint16_t type,
                                                      uint32_t size,
@@ -381,14 +381,14 @@ static void spicevmc_red_channel_release_msg_rcv_buf(RedChannelClient *rcc,
     }
 }
 
-//³õÊ¼»¯rccµÄsend_dataÊ±»áµ÷ÓÃhold_item½Ó¿Ú
+//åˆå§‹åŒ–rccçš„send_dataæ—¶ä¼šè°ƒç”¨hold_itemæ¥å£
 static void spicevmc_red_channel_hold_pipe_item(RedChannelClient *rcc,
     PipeItem *item)
 {
     /* NOOP */
 }
 
-// spicevmc·¢ËÍusbÓ³ÉäÊı¾İ
+// spicevmcå‘é€usbæ˜ å°„æ•°æ®
 static void spicevmc_red_channel_send_data(RedChannelClient *rcc,
                                            SpiceMarshaller *m,
                                            PipeItem *item)
@@ -475,7 +475,7 @@ static void spicevmc_red_channel_release_pipe_item(RedChannelClient *rcc,
     }
 }
 
-// Í¨µÀÁ¬½ÓÊ±µÄ»Øµ÷º¯Êı
+// é€šé“è¿æ¥æ—¶çš„å›è°ƒå‡½æ•°
 static void spicevmc_connect(RedChannel *channel, RedClient *client,
     RedsStream *stream, int migration, int num_common_caps,
     uint32_t *common_caps, int num_caps, uint32_t *caps)
@@ -524,11 +524,11 @@ static void spicevmc_connect(RedChannel *channel, RedClient *client,
     }
 }
 
-// Ä£¿éÈë¿Úº¯Êı£¬ĞéÄâ»úÆô¶¯Ê±Ö´ĞĞ
+// æ¨¡å—å…¥å£å‡½æ•°ï¼Œè™šæ‹Ÿæœºå¯åŠ¨æ—¶æ‰§è¡Œ
 SpiceCharDeviceState *spicevmc_device_connect(SpiceCharDeviceInstance *sin,
                                               uint8_t channel_type)
 {
-    static uint8_t id[256] = { 0, };//Ã¿´ÎÍ¨µÀ´´½¨¶¼»áÔö¼ÓÒ»¸öidÖµ£¬´Ó0¿ªÊ¼
+    static uint8_t id[256] = { 0, };//æ¯æ¬¡é€šé“åˆ›å»ºéƒ½ä¼šå¢åŠ ä¸€ä¸ªidå€¼ï¼Œä»0å¼€å§‹
     SpiceVmcState *state;
     ChannelCbs channel_cbs = { NULL, };
     ClientCbs client_cbs = { NULL, };
@@ -536,7 +536,7 @@ SpiceCharDeviceState *spicevmc_device_connect(SpiceCharDeviceInstance *sin,
 
     channel_cbs.config_socket = spicevmc_red_channel_client_config_socket;
     channel_cbs.on_disconnect = spicevmc_red_channel_client_on_disconnect;
-    channel_cbs.send_item = spicevmc_red_channel_send_item; //ÔõÃ´·¢ËÍ¹ÜµÀÏî
+    channel_cbs.send_item = spicevmc_red_channel_send_item; //æ€ä¹ˆå‘é€ç®¡é“é¡¹
     channel_cbs.hold_item = spicevmc_red_channel_hold_pipe_item;
     channel_cbs.release_item = spicevmc_red_channel_release_pipe_item;
     channel_cbs.alloc_recv_buf = spicevmc_red_channel_alloc_msg_rcv_buf;
@@ -544,12 +544,12 @@ SpiceCharDeviceState *spicevmc_device_connect(SpiceCharDeviceInstance *sin,
     channel_cbs.handle_migrate_flush_mark = spicevmc_channel_client_handle_migrate_flush_mark;
     channel_cbs.handle_migrate_data = spicevmc_channel_client_handle_migrate_data;
 
-	// SpiceVmcStateÊÇRedChannelµÄ×ÓÀà£¬coreÔÚreds.hÖĞÉùÃ÷£¬ÔÚreds.cÖĞ¶¨Òå
-	// Í¨µÀÀàĞÍ£¬×ÔÈ»ÊÇusbÓ³Éä£¬Ã»¼Ç´íµÄ»°VDIÀïÊÇ9£¬id´Ó¾²Ì¬±äÁ¿×ÔÔö£¬
+	// SpiceVmcStateæ˜¯RedChannelçš„å­ç±»ï¼Œcoreåœ¨reds.hä¸­å£°æ˜ï¼Œåœ¨reds.cä¸­å®šä¹‰
+	// é€šé“ç±»å‹ï¼Œè‡ªç„¶æ˜¯usbæ˜ å°„ï¼Œæ²¡è®°é”™çš„è¯VDIé‡Œæ˜¯9ï¼Œidä»é™æ€å˜é‡è‡ªå¢ï¼Œ
     state = (SpiceVmcState*)red_channel_create(sizeof(SpiceVmcState),
                                    core, channel_type, id[channel_type]++,
-                                   FALSE /* handle_acks£¬ ²»×öack¿ØÖÆÁ÷¿Ø*/,
-                                   spicevmc_red_channel_client_handle_message, //Ä¬ÈÏµÄÏûÏ¢·Ö·¢
+                                   FALSE /* handle_acksï¼Œ ä¸åšackæ§åˆ¶æµæ§*/,
+                                   spicevmc_red_channel_client_handle_message, //é»˜è®¤çš„æ¶ˆæ¯åˆ†å‘
                                    &channel_cbs,
                                    SPICE_MIGRATE_NEED_FLUSH | SPICE_MIGRATE_NEED_DATA_TRANSFER);
     red_channel_init_outgoing_messages_window(&state->channel);
