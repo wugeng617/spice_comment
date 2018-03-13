@@ -52,20 +52,21 @@ struct AsyncCommand {
     uint64_t cookie;
 };
 
+// spice显示通道消息分发器
 struct RedDispatcher {
-    QXLWorker base; //QXLWorker
+    QXLWorker base; //QXLWorker, 注册给QXL的回调函数集合
     QXLInstance *qxl; //跟QXLInstance关联起来
     Dispatcher dispatcher; //既然叫RedDispatcher，本身当然还是一个消息分发器
-    pthread_t worker_thread;
-    uint32_t pending;
-    int primary_active;
-    int x_res;
-    int y_res;
-    int use_hardware_cursor;
-    RedDispatcher *next;
-    Ring async_commands;
-    pthread_mutex_t  async_lock;
-    QXLDevSurfaceCreate surface_create;
+    pthread_t worker_thread; //工作线程
+    uint32_t pending; //WAKEUP和OOM消息的pending记录位置。
+    int primary_active;//主surface是否激活了，主surface创建完毕后会设置此标记
+    int x_res; //保存主surface的宽
+    int y_res; //保存主surface的高
+    int use_hardware_cursor; //是否使用硬件光标，创建主surface时由鼠标模式参数指定
+    RedDispatcher *next; //组成链表
+    Ring async_commands; //异步命令列表
+    pthread_mutex_t  async_lock; //异步命令链表的保护锁
+    QXLDevSurfaceCreate surface_create; //主surface创建参数
 };
 
 typedef struct RedWorkeState {
@@ -1094,8 +1095,8 @@ void red_dispatcher_init(QXLInstance *qxl)
 
     spice_return_if_fail(qxl->st->dispatcher == NULL);
 
-    quic_init();
-    sw_canvas_init();
+    quic_init();//初始化QUIC
+    sw_canvas_init();//初始化软件画布
 #ifdef USE_OPENGL
     gl_canvas_init();
 #endif // USE_OPENGL
@@ -1103,7 +1104,9 @@ void red_dispatcher_init(QXLInstance *qxl)
     red_dispatcher = spice_new0(RedDispatcher, 1);
     ring_init(&red_dispatcher->async_commands);
     spice_debug("red_dispatcher->async_commands.next %p", red_dispatcher->async_commands.next);
-    dispatcher_init(&red_dispatcher->dispatcher, RED_WORKER_MESSAGE_COUNT, NULL);
+	//初始化基础的消息分发器，没有占位指针
+	dispatcher_init(&red_dispatcher->dispatcher, RED_WORKER_MESSAGE_COUNT, NULL);
+	//构建显示通道工作线程的参数
     init_data.qxl = red_dispatcher->qxl = qxl;
     init_data.id = qxl->id;
     init_data.red_dispatcher = red_dispatcher;

@@ -477,8 +477,8 @@ int spice_server_remove_interface(SpiceBaseInstance *sin);
 typedef enum {
     SPICE_IMAGE_COMPRESS_INVALID  = 0,
     SPICE_IMAGE_COMPRESS_OFF      = 1,
-    SPICE_IMAGE_COMPRESS_AUTO_GLZ = 2,
-    SPICE_IMAGE_COMPRESS_AUTO_LZ  = 3,
+    SPICE_IMAGE_COMPRESS_AUTO_GLZ = 2, //自动GLZ
+    SPICE_IMAGE_COMPRESS_AUTO_LZ  = 3, //自动LZ
     SPICE_IMAGE_COMPRESS_QUIC     = 4,
     SPICE_IMAGE_COMPRESS_GLZ      = 5,
     SPICE_IMAGE_COMPRESS_LZ       = 6,

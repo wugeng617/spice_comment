@@ -254,6 +254,7 @@ static void setup_dummy_signal_handler(void)
 }
 #endif
 
+// 初始化消息分发器，传入能解析的消息最大值，消息分发时的占位指针
 void dispatcher_init(Dispatcher *dispatcher, size_t max_message_type,
                      void *opaque)
 {

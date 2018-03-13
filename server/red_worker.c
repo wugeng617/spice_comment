@@ -498,11 +498,7 @@ typedef struct StreamAgent {
     					the part of the surface area that is currently occupied by video
                            fragments */
     QRegion clip;       /* 
-    					当前视频裁剪区域。它可能与vis_region不同。比如，如果t1时刻的裁剪区域
-    					为c1，t2时刻的裁剪区域为c2，t1时间在前，t2在后。
-    					如果c1包含c2，并且c1/c2的部分至少存在部分区域
-    					没有被非视频图像覆盖，此时vis_region将包含C2以及C1/C2中那些还是现实视频区域
-    					的部分
+    					
     					the current video clipping. It can be different from vis_region:
                            for example, let c1 be the clip area at time t1, and c2
                            be the clip area at time t2, where t1 < t2. If c1 contains c2, and
@@ -547,6 +543,7 @@ struct RedCompressBuf {
 static const int BITMAP_FMT_IS_PLT[] = {0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0};
 static const int BITMAP_FMP_BYTES_PER_PIXEL[] = {0, 0, 0, 0, 0, 1, 2, 3, 4, 4, 1};
 
+//判断图像是否有渐变，要求是RGB图像且不是8A
 #define BITMAP_FMT_HAS_GRADUALITY(f)                                    \
     (bitmap_fmt_is_rgb(f)        &&                                     \
      ((f) != SPICE_BITMAP_FMT_8BIT_A))
@@ -752,8 +749,8 @@ struct DisplayChannelClient {
     Ring glz_drawables_inst_to_free;               // list of instances to be freed
     pthread_mutex_t glz_drawables_inst_to_free_lock;
 
-    uint8_t surface_client_created[NUM_SURFACES]; //记录RCC各个surface是否已经创建
-    QRegion surface_client_lossy_region[NUM_SURFACES];
+    uint8_t surface_client_created[NUM_SURFACES]; //记录各个surface在DCC中是否已经创建
+    QRegion surface_client_lossy_region[NUM_SURFACES]; //记录各个surface在DCC中的有损区域
 
     StreamAgent stream_agents[NUM_STREAMS]; //流代理，每条流在显示通道里有个代理对象
     int use_mjpeg_encoder_rate_control; //mjepg是否码率控制
@@ -1042,7 +1039,7 @@ typedef struct RedWorker {
 
     ImageCache image_cache; //图像缓存
 
-    spice_image_compression_t image_compression; //图像压缩类型
+    spice_image_compression_t image_compression; //记录图像压缩方式
     spice_wan_compression_t jpeg_state; 
     spice_wan_compression_t zlib_glz_state;
 
@@ -2740,7 +2737,8 @@ static StreamClipItem *__new_stream_clip(DisplayChannelClient* dcc, StreamAgent 
     return item;
 }
 
-// 向DCC中推送一个流裁剪命令管道命令
+// 向DCC中推送一个流裁剪管道项，因为是管道项，所以直接记录的是流代理指针
+// 但是裁剪区域从此刻的流代理裁剪区域中取出，因为流代理的裁剪区域可能会变化
 static void push_stream_clip(DisplayChannelClient* dcc, StreamAgent *agent)
 {
     StreamClipItem *item = __new_stream_clip(dcc, agent);
@@ -2796,16 +2794,28 @@ static void red_attach_stream(RedWorker *worker, Drawable *drawable, Stream *str
         QRegion clip_in_draw_dest;
 		//获取流代理，在创建流时会为每个dcc创建流代理
         agent = &dcc->stream_agents[get_stream_id(worker, stream)];
-		//更新流代理的可视区域，为什么用or
+		//更新流代理的可视区域，为什么用or, 因为drawable的bbox可能匹配
+		//到流了，但是这条流中各个drawable的clip可能会变，如视频区域上
+		//有个窗口，对窗口进行拖动，底层的视频贴图命令的bbox不会变，但是
+		//其裁剪区域会变化，造成drawable的tree_item的rgn会变化，也就是视频
+		//流的可视区域会变化，因为drawable可能积累起来了，流代理中原来可能就有
+		//可视区域，所以agent->vis_region区域是积累的视频流可视的最大区域。
+		//如果遮挡变大，vis_region是最早命令的rgn，如果遮挡变小，vis_region是
+		//最后命令的rgn。总之回事drawable积累的最大视频可视区域。
         region_or(&agent->vis_region, &drawable->tree_item.base.rgn);
 
+		//计算当前drawable经过流代理的裁剪后区域
         region_init(&clip_in_draw_dest);
         region_add(&clip_in_draw_dest, &drawable->red_drawable->bbox);
-        region_and(&clip_in_draw_dest, &agent->clip);
+        region_and(&clip_in_draw_dest, &agent->clip); 
 
+		// 流代理的裁剪区域和drawable的裁剪区域不一致时，更新流代理的裁剪区域
         if (!region_is_equal(&clip_in_draw_dest, &drawable->tree_item.base.rgn)) {
-            region_remove(&agent->clip, &drawable->red_drawable->bbox);
+			//先把bbox整个从clip中干掉，然后把当前drawable的裁剪后区域加到clip
+			//中，形成新的裁剪区域
+            region_remove(&agent->clip, &drawable->red_drawable->bbox);//
             region_or(&agent->clip, &drawable->tree_item.base.rgn);
+			//让客户端使用agent的clip重现裁剪流区域。
             push_stream_clip(dcc, agent);
         }
 #ifdef STREAM_STATS
@@ -7303,9 +7313,9 @@ static int is_surface_area_lossy(DisplayChannelClient *dcc, uint32_t surface_id,
 
     VALIDATE_SURFACE_RETVAL(worker, surface_id, FALSE);
     surface = &worker->surfaces[surface_id];
-    surface_lossy_region = &dcc->surface_client_lossy_region[surface_id];
+    surface_lossy_region = &dcc->surface_client_lossy_region[surface_id];//有损区域
 
-    if (!area) {
+    if (!area) { //测试整个surface
         if (region_is_empty(surface_lossy_region)) {
             return FALSE;
         } else {
@@ -9256,6 +9266,7 @@ static void red_marshall_image(RedChannelClient *rcc, SpiceMarshaller *m, ImageI
 	// 获取图像压缩方式
     comp_mode = display_channel->common.worker->image_compression;
 
+	// 有损、无损决策，默认无损
     if (((comp_mode == SPICE_IMAGE_COMPRESS_AUTO_LZ) ||
         (comp_mode == SPICE_IMAGE_COMPRESS_AUTO_GLZ)) //自动LZ或者自动GLZ压缩
         && !_stride_is_extra(&bitmap)) //图像必须没有添加数据
@@ -9512,23 +9523,27 @@ static void red_marshall_cursor(RedChannelClient *rcc,
     }
 }
 
+// 序列化DCC的surface创建消息
 static void red_marshall_surface_create(RedChannelClient *rcc,
     SpiceMarshaller *base_marshaller, SpiceMsgSurfaceCreate *surface_create)
 {
     DisplayChannelClient *dcc = RCC_TO_DCC(rcc);
 
+	// 在创建surface消息发送时初始化surface客户端的有损区域
     region_init(&dcc->surface_client_lossy_region[surface_create->surface_id]);
     red_channel_client_init_send_data(rcc, SPICE_MSG_DISPLAY_SURFACE_CREATE, NULL);
 
     spice_marshall_msg_display_surface_create(base_marshaller, surface_create);
 }
 
+// 序列化DCC的surface销毁消息
 static void red_marshall_surface_destroy(RedChannelClient *rcc,
        SpiceMarshaller *base_marshaller, uint32_t surface_id)
 {
     DisplayChannelClient *dcc = RCC_TO_DCC(rcc);
     SpiceMsgSurfaceDestroy surface_destroy;
 
+	// 在销毁surface消息发送时，销毁surface的客户端有损区域
     region_destroy(&dcc->surface_client_lossy_region[surface_id]);
     red_channel_client_init_send_data(rcc, SPICE_MSG_DISPLAY_SURFACE_DESTROY, NULL);
 

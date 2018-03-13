@@ -357,7 +357,9 @@ typedef struct SpiceMsgDisplayStreamDataSized {
     uint8_t data[0];
 } SpiceMsgDisplayStreamDataSized;
 
-// 重新对一条流进行裁剪
+// 重新对一条流进行裁剪，也就是更新一个流的可视区域
+// 因为流的目标区域是确定的，所以，不要传输目标区域
+// 只要传一下对目标的裁剪区域就可以了。
 typedef struct SpiceMsgDisplayStreamClip {
     uint32_t id; //对哪个流id进行裁剪
     SpiceClip clip; //裁剪区域

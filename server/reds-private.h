@@ -132,8 +132,8 @@ typedef struct RedsState {
     SpiceWatch *secure_listen_watch;
     VDIPortState agent_state;
     int pending_mouse_event;
-    Ring clients; //red_clientÁĞ±í
-    int num_clients; //¼ÇÂ¼¿Í»§¶ËÊıÁ¿
+    Ring clients; //red_clientåˆ—è¡¨
+    int num_clients; //è®°å½•å®¢æˆ·ç«¯æ•°é‡
     MainChannel *main_channel;
 
     int mig_wait_connect; /* src waits for clients to establish connection to dest
@@ -152,10 +152,10 @@ typedef struct RedsState {
     int num_mig_target_clients;
     RedsMigSpice *mig_spice;
 
-    int num_of_channels; //¼ÇÂ¼ÏÂ·şÎñ¶ËµÄÍ¨µÀÊıÁ¿
-    Ring channels; //Í¨µÀÁĞ±í£¬Ò²¾ÍÊÇred_channelÊµÀıÁĞ±í
-    int mouse_mode; //µ±Ç°Ê¹ÓÃµÄÊó±êÄ£Ê½
-    int is_client_mouse_allowed; //ÊÇ·ñÔÊĞí¿Í»§¶Ë¶ËÊó±êÄ£Ê½
+    int num_of_channels; //è®°å½•ä¸‹æœåŠ¡ç«¯çš„é€šé“æ•°é‡
+    Ring channels; //é€šé“åˆ—è¡¨ï¼Œä¹Ÿå°±æ˜¯red_channelå®ä¾‹åˆ—è¡¨
+    int mouse_mode; //å½“å‰ä½¿ç”¨çš„é¼ æ ‡æ¨¡å¼
+    int is_client_mouse_allowed; //æ˜¯å¦å…è®¸å®¢æˆ·ç«¯ç«¯é¼ æ ‡æ¨¡å¼
     int dispatcher_allows_client_mouse;
     MonitorMode monitor_mode;
     SpiceTimer *mig_timer;

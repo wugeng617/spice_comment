@@ -428,17 +428,21 @@ static int reds_main_channel_connected(void)
     return main_channel_is_connected(reds->main_channel);
 }
 
+/*
+ * 断开一个RedClient，断开RedClient可能是服务端主动断开的，
+ * 也有可能是客户端发送的连接断开消息处罚
+ */
 void reds_client_disconnect(RedClient *client)
 {
     RedsMigTargetClient *mig_client;
 
-    if (exit_on_disconnect)
+    if (exit_on_disconnect) //客户端断开时是否
     {
         spice_info("Exiting server because of client disconnect.\n");
         exit(0);
     }
 
-    if (!client || client->disconnecting) {
+    if (!client || client->disconnecting) {//client正在断开，返回
         spice_debug("client %p already during disconnection", client);
         return;
     }
@@ -514,8 +518,10 @@ void reds_client_disconnect(RedClient *client)
     }
 }
 
-// TODO: go over all usage of reds_disconnect, most/some of it should be converted to
-// reds_client_disconnect
+/* TODO: go over all usage of reds_disconnect, most/some of it should be converted to
+ *  reds_client_disconnect
+ * 断开libspiceserver全局记录的所有客户端，并清理掉迁移信息
+ */
 static void reds_disconnect(void)
 {
     RingItem *link, *next;
@@ -2411,6 +2417,7 @@ void reds_set_client_mm_time_latency(RedClient *client, uint32_t latency)
     }
 }
 
+/* 初始化 */
 static int reds_init_net(void)
 {
     if (spice_port != -1) {
@@ -3061,6 +3068,7 @@ SPICE_GNUC_VISIBLE int spice_server_add_interface(SpiceServer *s,
             return -1;
         }
     } else if (strcmp(interface->type, SPICE_INTERFACE_QXL) == 0) {
+    	//创建QXL对象时执行
         QXLInstance *qxl;
 
         spice_info("SPICE_INTERFACE_QXL");
@@ -3069,10 +3077,13 @@ SPICE_GNUC_VISIBLE int spice_server_add_interface(SpiceServer *s,
             spice_warning("unsupported qxl interface");
             return -1;
         }
-
+		//恢复出QXLInstance
         qxl = SPICE_CONTAINEROF(sin, QXLInstance, base);
+		//创建QXL实力时，spice里为它创建QXLState，QXLState主要是包含
+		//QXLInstance接口指针和red_dispatcher
         qxl->st = spice_new0(QXLState, 1);
         qxl->st->qif = SPICE_CONTAINEROF(interface, QXLInterface, base);
+		//初始化red_dispatcher
         red_dispatcher_init(qxl);
 
     } else if (strcmp(interface->type, SPICE_INTERFACE_TABLET) == 0) {
@@ -3288,6 +3299,7 @@ SPICE_GNUC_VISIBLE SpiceServer *spice_server_new(void)
     return reds;
 }
 
+// spiceserver的初始化函数，创建设备前调用
 SPICE_GNUC_VISIBLE int spice_server_init(SpiceServer *s, SpiceCoreInterface *core)
 {
     int ret;

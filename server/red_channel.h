@@ -659,7 +659,7 @@ struct RedClient {
 
     pthread_t thread_id;
 
-    int disconnecting;
+    int disconnecting; /*RedClient是否正在断开*/
     /* Note that while semi-seamless migration is conducted by the main thread, seamless migration
      * involves all channels, and thus the related varaibles can be accessed from different
      * threads */
