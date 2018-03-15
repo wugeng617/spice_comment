@@ -533,10 +533,11 @@ typedef struct StreamClipItem { //流裁剪
     SpiceClipRects *rects; //裁剪区域，矩形集合，裁剪矩形集合从StreamAgent的Clip中获取
 } StreamClipItem;
 
+/* 压缩缓冲区 */
 typedef struct RedCompressBuf RedCompressBuf;
 struct RedCompressBuf {
-    uint32_t buf[RED_COMPRESS_BUF_SIZE / 4];
-    RedCompressBuf *next;
+    uint32_t buf[RED_COMPRESS_BUF_SIZE / 4];//64K/4，也就是16K的像素
+    RedCompressBuf *next; //缓冲区链表
     RedCompressBuf *send_next;
 };
 
@@ -729,8 +730,9 @@ struct DisplayChannelClient {
     uint32_t palette_cache_items;
 
     struct {
-        uint32_t stream_outbuf_size;
-        uint8_t *stream_outbuf; // caution stream buffer is also used as compress bufs!!!
+        uint32_t stream_outbuf_size; //DCC发送数据的io流缓冲区大小
+        uint8_t *stream_outbuf; // 注意:io流缓冲区也会被当成压缩缓冲区
+        //caution stream buffer is also used as compress bufs!!!
 
         RedCompressBuf *used_compress_bufs;
 
@@ -2866,6 +2868,7 @@ static void red_stop_stream(RedWorker *worker, Stream *stream)
     RingItem *item, *next;
 
     spice_assert(ring_item_is_linked(&stream->link));
+	//停流的时候current指针必须为空
     spice_assert(!stream->current);
     spice_debug("stream %d", get_stream_id(worker, stream));
     WORKER_FOREACH_DCC_SAFE(worker, item, next, dcc) {
@@ -3436,6 +3439,7 @@ static void red_create_stream(RedWorker *worker, Drawable *drawable)
     return;
 }
 
+// 为
 static void red_disply_start_streams(DisplayChannelClient *dcc)
 {
     Ring *ring = &dcc->common.worker->streams;
@@ -4155,7 +4159,7 @@ static inline Shadow *__new_shadow(RedWorker *worker, Drawable *item, SpicePoint
 }
 
 /* 将copybits命令item添加到surface的ring命令树，
- * delta是copybits的图像偏移量
+ * delta是copybits的图像偏移量, 是copybits的src坐标-bbox的坐上顶点坐标
  */
 static inline int red_current_add_with_shadow(RedWorker *worker, Ring *ring, Drawable *item,
                                               SpicePoint *delta)
@@ -4171,8 +4175,10 @@ static inline int red_current_add_with_shadow(RedWorker *worker, Ring *ring, Dra
         return FALSE;
     }
     print_base_item("ADDSHADOW", &item->tree_item.base);
-    // item and his shadow must initially be placed in the same container.
-    // for now putting them on root.
+    /* item and his shadow must initially be placed in the same container.
+   	   for now putting them on root.
+   	   drawable和相应的shadow开始时是放在同一个容器里，先暂时放在root里
+    */
 
     // only primary surface streams are supported
     if (is_primary_surface(worker, item->surface_id)) {
@@ -10252,6 +10258,7 @@ static int display_channel_client_wait_for_init(DisplayChannelClient *dcc)
     return FALSE;
 }
 
+// 在创建DCC完毕后最后调用
 static void on_new_display_channel_client(DisplayChannelClient *dcc)
 {
     DisplayChannel *display_channel = DCC_TO_DC(dcc);
@@ -11204,10 +11211,16 @@ static void guest_set_client_capabilities(RedWorker *worker)
     worker->set_client_capabilities_pending = 0;
 }
 
-static void handle_new_display_channel(RedWorker *worker, RedClient *client, RedsStream *stream,
-                                       int migrate,
-                                       uint32_t *common_caps, int num_common_caps,
-                                       uint32_t *caps, int num_caps)
+/*
+ * 
+*/
+static void handle_new_display_channel(
+	RedWorker *worker, 
+	RedClient *client,
+	RedsStream *stream,
+	int migrate,
+	uint32_t *common_caps, int num_common_caps,
+	uint32_t *caps, int num_caps)
 {
     DisplayChannel *display_channel;
     DisplayChannelClient *dcc;

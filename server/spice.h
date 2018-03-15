@@ -299,9 +299,10 @@ typedef struct SpiceMouseState SpiceMouseState;
 
 struct SpiceMouseInterface {
     SpiceBaseInterface base;
-
+	// 移动操作，偏移量
     void (*motion)(SpiceMouseInstance *sin, int dx, int dy, int dz,
                    uint32_t buttons_state);
+	// 按键操作
     void (*buttons)(SpiceMouseInstance *sin, uint32_t buttons_state);
 };
 
@@ -319,10 +320,13 @@ typedef struct SpiceTabletState SpiceTabletState;
 
 struct SpiceTabletInterface {
     SpiceBaseInterface base;
-
+	//设置逻辑画布宽高
     void (*set_logical_size)(SpiceTabletInstance* tablet, int width, int height);
+	// 位置操作，传入当前位置和按钮状态
     void (*position)(SpiceTabletInstance* tablet, int x, int y, uint32_t buttons_state);
-    void (*wheel)(SpiceTabletInstance* tablet, int wheel_moution, uint32_t buttons_state);
+	// 滚动操作，滚轮数量，滚轮的状态
+    void (*wheel)(SpiceTabletInstance* tablet, int wheel_motion, uint32_t buttons_state);
+	// 按键操作，
     void (*buttons)(SpiceTabletInstance* tablet, uint32_t buttons_state);
 };
 
@@ -479,20 +483,20 @@ typedef enum {
     SPICE_IMAGE_COMPRESS_OFF      = 1,
     SPICE_IMAGE_COMPRESS_AUTO_GLZ = 2, //自动GLZ
     SPICE_IMAGE_COMPRESS_AUTO_LZ  = 3, //自动LZ
-    SPICE_IMAGE_COMPRESS_QUIC     = 4,
-    SPICE_IMAGE_COMPRESS_GLZ      = 5,
-    SPICE_IMAGE_COMPRESS_LZ       = 6,
+    SPICE_IMAGE_COMPRESS_QUIC     = 4, //QUIC压缩
+    SPICE_IMAGE_COMPRESS_GLZ      = 5, //GLZ压缩
+    SPICE_IMAGE_COMPRESS_LZ       = 6, //LZ压缩
 } spice_image_compression_t;
 
 int spice_server_set_image_compression(SpiceServer *s,
                                        spice_image_compression_t comp);
 spice_image_compression_t spice_server_get_image_compression(SpiceServer *s);
 
-typedef enum {
+typedef enum { //广域网下的压缩
     SPICE_WAN_COMPRESSION_INVALID,
-    SPICE_WAN_COMPRESSION_AUTO,
-    SPICE_WAN_COMPRESSION_ALWAYS,
-    SPICE_WAN_COMPRESSION_NEVER,
+    SPICE_WAN_COMPRESSION_AUTO, //自动判断是否压缩
+    SPICE_WAN_COMPRESSION_ALWAYS,//总是压缩
+    SPICE_WAN_COMPRESSION_NEVER, //不压缩
 } spice_wan_compression_t;
 
 int spice_server_set_jpeg_compression(SpiceServer *s, spice_wan_compression_t comp);

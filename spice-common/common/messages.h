@@ -108,14 +108,14 @@ typedef struct SpiceMsgMigrate {
 
 //资源ID
 typedef struct SpiceResourceID {
-    uint8_t type; //类型
-    uint64_t id; //ID
+    uint8_t type; //资源类型
+    uint64_t id; //资源ID
 } SpiceResourceID;
 
 //资源列表
 typedef struct SpiceResourceList {
-    uint16_t count; //资源ID有效长度
-    SpiceResourceID resources[0];
+    uint16_t count; //资源数量
+    SpiceResourceID resources[0]; //资源列表
 } SpiceResourceList;
 
 typedef struct SpiceMsgSetAck {

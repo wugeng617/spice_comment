@@ -75,6 +75,7 @@ enum {
 
 typedef uint32_t RedWorkerMessage;
 
+/* 最多4个渲染器 */
 #define RED_MAX_RENDERERS 4
 
 /* 定义渲染类型 */
@@ -90,8 +91,8 @@ typedef struct RedDispatcher RedDispatcher;
 // red_worker工作线程
 typedef struct WorkerInitData {
     struct QXLInstance *qxl; //QXL实例指针
-    int id; //工作id
-    uint32_t *pending; //pending指针
+    int id; // QXLid(显卡id)
+    uint32_t *pending; //指向32位整数的指针，实际上指向reddispatcher的pending
     uint32_t num_renderers;
     uint32_t renderers[RED_MAX_RENDERERS];
     spice_image_compression_t image_compression;
@@ -104,7 +105,7 @@ typedef struct WorkerInitData {
     uint8_t memslot_id_bits;
     uint8_t internal_groupslot_id;
     uint32_t n_surfaces;
-    RedDispatcher *red_dispatcher;
+    RedDispatcher *red_dispatcher; //red消息分发器
 } WorkerInitData;
 
 void *red_worker_main(void *arg);

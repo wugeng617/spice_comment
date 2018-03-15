@@ -84,7 +84,7 @@ extern spice_image_compression_t image_compression;
 extern spice_wan_compression_t jpeg_state;
 extern spice_wan_compression_t zlib_glz_state;
 
-static RedDispatcher *dispatchers = NULL;
+static RedDispatcher *dispatchers = NULL; //RedDispatcher列表，显卡创建时设置，VDI里两个
 
 static int red_dispatcher_check_qxl_version(RedDispatcher *rd, int major, int minor)
 {
@@ -224,6 +224,7 @@ typedef struct RendererInfo {
     const char *name;
 } RendererInfo;
 
+// 服务端渲染器信息列表
 static RendererInfo renderers_info[] = {
     {RED_RENDERER_SW, "sw"},
 #ifdef USE_OPENGL
@@ -233,9 +234,11 @@ static RendererInfo renderers_info[] = {
     {RED_RENDERER_INVALID, NULL},
 };
 
+/* 存放程序中用到的渲染器id，id数量由num_renderers表示，不能超限 */
 static uint32_t renderers[RED_MAX_RENDERERS];
 static uint32_t num_renderers = 0;
 
+// 根据名字来查找渲染器信息对象
 static RendererInfo *find_renderer(const char *name)
 {
     RendererInfo *inf = renderers_info;
@@ -252,9 +255,12 @@ int red_dispatcher_add_renderer(const char *name)
 {
     RendererInfo *inf;
 
+	// 没有空间了，或者找不到渲染器信息
     if (num_renderers == RED_MAX_RENDERERS || !(inf = find_renderer(name))) {
         return FALSE;
     }
+
+	// 存放渲染器信息
     renderers[num_renderers++] = inf->id;
     return TRUE;
 }
@@ -777,11 +783,14 @@ static inline int calc_compression_level(void)
     }
 }
 
+/* 触发图像压缩算法改变事件，IC(ImageCompression)，
+ * 将向当前spiceserver中的所有reddispatcher发出设置压缩算法事件
+ */
 void red_dispatcher_on_ic_change(void)
 {
     RedWorkerMessageSetCompression payload;
     int compression_level = calc_compression_level();
-    RedDispatcher *now = dispatchers;
+    RedDispatcher *now = dispatchers; //系统启动是， now为空
 
     while (now) {
         now->qxl->st->qif->set_compression_level(now->qxl, compression_level);
@@ -792,6 +801,10 @@ void red_dispatcher_on_ic_change(void)
         now = now->next;
     }
 }
+
+/* 触发流视频改变事件，SV(StreamingVideo)，
+ * 将向当前spiceserver中的所有reddispatcher发出设置流视频事件
+ */
 
 void red_dispatcher_on_sv_change(void)
 {
@@ -1108,9 +1121,10 @@ void red_dispatcher_init(QXLInstance *qxl)
 	dispatcher_init(&red_dispatcher->dispatcher, RED_WORKER_MESSAGE_COUNT, NULL);
 	//构建显示通道工作线程的参数
     init_data.qxl = red_dispatcher->qxl = qxl;
-    init_data.id = qxl->id;
+    init_data.id = qxl->id;//取QXL的ID
     init_data.red_dispatcher = red_dispatcher;
     init_data.pending = &red_dispatcher->pending;
+	// 复制reds里添加的渲染器，默认SW一个。VDI服务端就是一个渲染器
     init_data.num_renderers = num_renderers;
     memcpy(init_data.renderers, renderers, sizeof(init_data.renderers));
 

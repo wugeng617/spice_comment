@@ -111,6 +111,7 @@ typedef struct RedsMigWaitDisconnectClient {
     RedClient *client;
 } RedsMigWaitDisconnectClient;
 
+/* spice服务端字符设备结构  链表项          */
 typedef struct SpiceCharDeviceStateItem {
     RingItem link;
     SpiceCharDeviceState *st;
@@ -130,7 +131,7 @@ typedef struct RedsState {
     int secure_listen_socket;
     SpiceWatch *listen_watch;
     SpiceWatch *secure_listen_watch;
-    VDIPortState agent_state;
+    VDIPortState agent_state; //agent状态
     int pending_mouse_event;
     Ring clients; //red_client列表
     int num_clients; //记录客户端数量
@@ -161,8 +162,8 @@ typedef struct RedsState {
     SpiceTimer *mig_timer;
     SpiceTimer *mm_timer;
 
-    int vm_running;
-    Ring char_devs_states; /* list of SpiceCharDeviceStateItem */
+    int vm_running; //虚拟机是否正在运行
+    Ring char_devs_states; /* list of SpiceCharDeviceStateItem 字符设备state链表 */
     int seamless_migration_enabled; /* command line arg */
 
     SSL_CTX *ctx;

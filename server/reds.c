@@ -103,20 +103,20 @@ static int sasl_enabled = 0; // sasl disabled by default
 #if HAVE_SASL
 static char *sasl_appname = NULL; // default to "spice" if NULL
 #endif
-static char *spice_name = NULL;
-static bool spice_uuid_is_set = FALSE;
-static uint8_t spice_uuid[16] = { 0, };
+static char *spice_name = NULL; //spiceserver名称
+static bool spice_uuid_is_set = FALSE; //是否设置了uuid
+static uint8_t spice_uuid[16] = { 0, }; //spiceserver UUID
 
 static int ticketing_enabled = 1; //Ticketing is enabled by default
 static pthread_mutex_t *lock_cs;
 static long *lock_count;
-uint32_t streaming_video = STREAM_VIDEO_FILTER;
-spice_image_compression_t image_compression = SPICE_IMAGE_COMPRESS_AUTO_GLZ;
-spice_wan_compression_t jpeg_state = SPICE_WAN_COMPRESSION_AUTO;
-spice_wan_compression_t zlib_glz_state = SPICE_WAN_COMPRESSION_AUTO;
-int agent_mouse = TRUE;
-int agent_copypaste = TRUE;
-int agent_file_xfer = TRUE;
+uint32_t streaming_video = STREAM_VIDEO_FILTER; //默认过滤式流视频
+spice_image_compression_t image_compression = SPICE_IMAGE_COMPRESS_AUTO_GLZ; //默认AUTOGLZ压缩，VDI就是默认值
+spice_wan_compression_t jpeg_state = SPICE_WAN_COMPRESSION_AUTO; //广域网下，JPEG默认自动判断是否压缩
+spice_wan_compression_t zlib_glz_state = SPICE_WAN_COMPRESSION_AUTO; //广域网下，ZLIB_GLZ默认自动判断是否压缩
+int agent_mouse = TRUE; //是否使用agentmouse
+int agent_copypaste = TRUE; //agent是否支持剪贴板
+int agent_file_xfer = TRUE; //agent是否支持文件传输
 static bool exit_on_disconnect = FALSE;
 
 static RedsState *reds = NULL;
@@ -2640,12 +2640,14 @@ static inline void on_activating_ticketing(void)
     }
 }
 
+// 修改spiceserver的图像压缩算法
 static void set_image_compression(spice_image_compression_t val)
 {
     if (val == image_compression) {
         return;
     }
     image_compression = val;
+	// 分发图像压缩算法变化消息
     red_dispatcher_on_ic_change();
 }
 
@@ -3289,7 +3291,7 @@ err:
     return -1;
 }
 
-/* new interface */
+/* new interface，创建一个SpiceServer，只是分配了归0内存 */
 SPICE_GNUC_VISIBLE SpiceServer *spice_server_new(void)
 {
     /* we can't handle multiple instances (yet) */
@@ -3299,7 +3301,10 @@ SPICE_GNUC_VISIBLE SpiceServer *spice_server_new(void)
     return reds;
 }
 
-// spiceserver的初始化函数，创建设备前调用
+/*
+ * spiceserver的初始化函数，创建设备前调用
+ * 干两件事：1.do_spice_init 2.添加默认的服务端渲染器SW
+*/
 SPICE_GNUC_VISIBLE int spice_server_init(SpiceServer *s, SpiceCoreInterface *core)
 {
     int ret;
@@ -3338,6 +3343,7 @@ SPICE_GNUC_VISIBLE int spice_server_set_compat_version(SpiceServer *s,
     return 0;
 }
 
+// 设置spice的监听端口
 SPICE_GNUC_VISIBLE int spice_server_set_port(SpiceServer *s, int port)
 {
     spice_assert(reds == s);
@@ -3348,6 +3354,7 @@ SPICE_GNUC_VISIBLE int spice_server_set_port(SpiceServer *s, int port)
     return 0;
 }
 
+//设置spiceserver的地址及地址类型，支持IPV4和V6
 SPICE_GNUC_VISIBLE void spice_server_set_addr(SpiceServer *s, const char *addr, int flags)
 {
     spice_assert(reds == s);
@@ -3488,6 +3495,7 @@ SPICE_GNUC_VISIBLE int spice_server_set_tls(SpiceServer *s, int port,
     return 0;
 }
 
+// 设置spiceserver的图像压缩算法
 SPICE_GNUC_VISIBLE int spice_server_set_image_compression(SpiceServer *s,
                                                           spice_image_compression_t comp)
 {
@@ -3496,12 +3504,14 @@ SPICE_GNUC_VISIBLE int spice_server_set_image_compression(SpiceServer *s,
     return 0;
 }
 
+//返回图像压缩算法
 SPICE_GNUC_VISIBLE spice_image_compression_t spice_server_get_image_compression(SpiceServer *s)
 {
     spice_assert(reds == s);
     return image_compression;
 }
 
+// 设置广域网下JPEG的压缩行为
 SPICE_GNUC_VISIBLE int spice_server_set_jpeg_compression(SpiceServer *s, spice_wan_compression_t comp)
 {
     spice_assert(reds == s);
@@ -3514,6 +3524,7 @@ SPICE_GNUC_VISIBLE int spice_server_set_jpeg_compression(SpiceServer *s, spice_w
     return 0;
 }
 
+// 设置广域网下ZLIB_GLZ的压缩行为
 SPICE_GNUC_VISIBLE int spice_server_set_zlib_glz_compression(SpiceServer *s, spice_wan_compression_t comp)
 {
     spice_assert(reds == s);
@@ -3598,6 +3609,7 @@ SPICE_GNUC_VISIBLE int spice_server_kbd_leds(SpiceKbdInstance *sin, int leds)
     return 0;
 }
 
+// 设置视频流的参数
 SPICE_GNUC_VISIBLE int spice_server_set_streaming_video(SpiceServer *s, int value)
 {
     spice_assert(reds == s);
@@ -3606,10 +3618,12 @@ SPICE_GNUC_VISIBLE int spice_server_set_streaming_video(SpiceServer *s, int valu
         value != SPICE_STREAM_VIDEO_FILTER)
         return -1;
     streaming_video = value;
+	// 分发设置视频流模式改变的事件
     red_dispatcher_on_sv_change();
     return 0;
 }
 
+// 设置回放压缩算法
 SPICE_GNUC_VISIBLE int spice_server_set_playback_compression(SpiceServer *s, int enable)
 {
     spice_assert(reds == s);
@@ -3617,6 +3631,7 @@ SPICE_GNUC_VISIBLE int spice_server_set_playback_compression(SpiceServer *s, int
     return 0;
 }
 
+// 设置鼠标模式
 SPICE_GNUC_VISIBLE int spice_server_set_agent_mouse(SpiceServer *s, int enable)
 {
     spice_assert(reds == s);
@@ -3629,6 +3644,7 @@ SPICE_GNUC_VISIBLE int spice_server_set_agent_copypaste(SpiceServer *s, int enab
 {
     spice_assert(reds == s);
     agent_copypaste = enable;
+	//同时更新agent_state的状态
     reds->agent_state.write_filter.copy_paste_enabled = agent_copypaste;
     reds->agent_state.read_filter.copy_paste_enabled = agent_copypaste;
     return 0;
@@ -3803,6 +3819,7 @@ SPICE_GNUC_VISIBLE int spice_server_migrate_switch(SpiceServer *s)
     return 0;
 }
 
+/* spiceserver 开机时的接口 */
 SPICE_GNUC_VISIBLE void spice_server_vm_start(SpiceServer *s)
 {
     RingItem *item;
