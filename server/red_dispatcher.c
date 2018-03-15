@@ -1129,7 +1129,8 @@ void red_dispatcher_init(QXLInstance *qxl)
     memcpy(init_data.renderers, renderers, sizeof(init_data.renderers));
 
     pthread_mutex_init(&red_dispatcher->async_lock, NULL);
-    init_data.image_compression = image_compression;
+	// 取qemu设置的压缩算法
+    init_data.image_compression = image_compression; //VDI是AUTOGLZ
     init_data.jpeg_state = jpeg_state;
     init_data.zlib_glz_state = zlib_glz_state;
     init_data.streaming_video = streaming_video;

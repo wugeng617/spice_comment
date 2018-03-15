@@ -455,7 +455,7 @@ enum {
 typedef struct Stream Stream;
 struct Stream {
     uint8_t refs; //引用计数
-    Drawable *current; //流的最后一帧的Drawable指针
+    Drawable *current; //如果有值，表示关联到流的最后一个drawable
     red_time_t last_time; //流最后一帧的到达时间，等于最后一帧的创建时间
     int width; //图像流宽
     int height; //图像流高
@@ -822,8 +822,8 @@ typedef struct TreeItem {
 
 #define IS_DRAW_ITEM(item) ((item)->type == TREE_ITEM_TYPE_DRAWABLE)
 
-typedef struct Shadow { //表示copybits的引用关系，
-    TreeItem base; //引用的目标区域
+typedef struct Shadow { //表示copybits的引用关系
+    TreeItem base; //其rgn表示，copybits命令引用的原区域
     QRegion on_hold;
     struct DrawItem* owner; //哪条copy_bits创建了本shadow，拥有此引用
 } Shadow;
@@ -2158,6 +2158,7 @@ static void red_current_clear(RedWorker *worker, int surface_id)
 /*
  * Return: TRUE if wait_if_used == FALSE, or otherwise, if all of the pipe items that
  * are related to the surface have been cleared (or sent) from the pipe.
+ * 清除指定dcc管道中所有surface的管道命令
  */
 static int red_clear_surface_drawables_from_pipe(DisplayChannelClient *dcc, int surface_id,
                                                  int wait_if_used)
@@ -2167,7 +2168,7 @@ static int red_clear_surface_drawables_from_pipe(DisplayChannelClient *dcc, int 
     int x;
     RedChannelClient *rcc;
 
-    if (!dcc) {
+    if (!dcc) { //dcc为空，清除成功
         return TRUE;
     }
 
@@ -2175,17 +2176,17 @@ static int red_clear_surface_drawables_from_pipe(DisplayChannelClient *dcc, int 
        no other drawable depends on them */
 
     rcc = &dcc->common.base;
-    ring = &dcc->common.base.pipe;
+    ring = &dcc->common.base.pipe; //获取命令管道
     item = (PipeItem *) ring;
-    while ((item = (PipeItem *)ring_next(ring, (RingItem *)item))) {
+    while ((item = (PipeItem *)ring_next(ring, (RingItem *)item))) {//如果还有命令
         Drawable *drawable;
         DrawablePipeItem *dpi = NULL;
         int depend_found = FALSE;
 
-        if (item->type == PIPE_ITEM_TYPE_DRAW) {
+        if (item->type == PIPE_ITEM_TYPE_DRAW) {//draw管道项
             dpi = SPICE_CONTAINEROF(item, DrawablePipeItem, dpi_pipe_item);
             drawable = dpi->drawable;
-        } else if (item->type == PIPE_ITEM_TYPE_UPGRADE) {
+        } else if (item->type == PIPE_ITEM_TYPE_UPGRADE) {//流
             drawable = ((UpgradeItem *)item)->drawable;
         } else {
             continue;
@@ -2236,6 +2237,7 @@ static int red_clear_surface_drawables_from_pipe(DisplayChannelClient *dcc, int 
     return TRUE;
 }
 
+// 清除redworker中指定surface的所有管道中的命令
 static void red_clear_surface_drawables_from_pipes(RedWorker *worker,
                                                    int surface_id,
                                                    int wait_if_used)
@@ -2942,7 +2944,7 @@ static inline void red_display_detach_stream_gracefully(DisplayChannelClient *dc
         return;
     }
 
-	// 如果流的最后一条显示命令不空且最后一条命令包含了流代理的可视区域
+	// 看看流最后一条命令的rgn是否包含了流代理的可视区域
     if (stream->current &&
         region_contains(&stream->current->tree_item.base.rgn, &agent->vis_region)) {
         //如果流当前有帧，且当前帧覆盖了显示区域的全部.
@@ -2953,14 +2955,15 @@ static inline void red_display_detach_stream_gracefully(DisplayChannelClient *dc
 
         /* (1) The caller should detach the drawable from the stream. This will
          * lead to sending the drawable losslessly, as an ordinary drawable. */
-        //流的当前命令已经在dcc管道中 
+        // 流的最后一个现实命令已经在dcc管道中, 但肯定在上面的流裁剪命令之后
         if (red_display_drawable_is_in_pipe(dcc, stream->current)) {			
             spice_debug("stream %d: upgrade by linked drawable. sized %d, box ==>",
                         stream_id, stream->current->sized_stream != NULL);
             rect_debug(&stream->current->red_drawable->bbox);
             goto clear_vis_region;
         }
-		//流当前drawable还不在管道中，将流的drawable对象作为drawcopy发送出去
+		//流最后一个命令不在发送管道，在命令树中？
+		//构建UpgradeItem管道项，引用了流的最后一个管道项
 		//就是直接渲染current?
         spice_debug("stream %d: upgrade by drawable. sized %d, box ==>",
                     stream_id, stream->current->sized_stream != NULL);
@@ -2972,18 +2975,21 @@ static inline void red_display_detach_stream_gracefully(DisplayChannelClient *dc
         red_channel_pipe_item_init(channel,
                 &upgrade_item->base, PIPE_ITEM_TYPE_UPGRADE);
         upgrade_item->drawable = stream->current;
-        upgrade_item->drawable->refs++;
-		//流当前drawable
+        upgrade_item->drawable->refs++; //引用drawable
+		//下面一句跟vdi不一致，vdi取得时agent->vis_region，也就是说，虽然都是
+		//将流的最后一条命令的内容发送给客户端，原始的将最后一帧的rgn贴到客户端，
+		//但vdi里则是将agent的vis_region贴给客户端，因为存在包含关系，所以vdi区域可能会更小
         n_rects = pixman_region32_n_rects(&upgrade_item->drawable->tree_item.base.rgn);
         upgrade_item->rects = spice_malloc_n_m(n_rects, sizeof(SpiceRect), sizeof(SpiceClipRects));
         upgrade_item->rects->num_rects = n_rects;
         region_ret_rects(&upgrade_item->drawable->tree_item.base.rgn,
                          upgrade_item->rects->rects, n_rects);
+		//添加到命令管道，前面是流裁剪，现在是流更新管道命令
         red_channel_client_pipe_add(rcc, &upgrade_item->base);
 
     } else {
         SpiceRect upgrade_area;
-		//流的可视区域作为更新区域
+		//流的可视区域作为更新区域，将命令树的命令刷新到画布
         region_extents(&agent->vis_region, &upgrade_area);
         spice_debug("stream %d: upgrade by screenshot. has current %d. box ==>",
                     stream_id, stream->current != NULL);
@@ -2993,11 +2999,11 @@ static inline void red_display_detach_stream_gracefully(DisplayChannelClient *dc
         } else {
             red_update_area(dcc->common.worker, &upgrade_area, 0);
         }
-		//刷新DCC的主surface的upgrade_area
+		//将主画布的可视区域的
         red_add_surface_area_image(dcc, 0, &upgrade_area, NULL, FALSE);
     }
+	// 不管怎样，最后都要清空流代理的可视区域
 clear_vis_region:
-	//流的可视区域变0
     region_clear(&agent->vis_region);
 }
 
@@ -4131,7 +4137,8 @@ static void add_clip_rects(QRegion *rgn, SpiceClipRects *data)
     }
 }
 
-//创建一个命令树shadow，创建者是item，delta是copybits命令便宜量，源坐标-目的坐标
+// 创建一个命令树shadow，创建者是item，delta是copybits命令偏移量
+// 因为需要知道原
 static inline Shadow *__new_shadow(RedWorker *worker, Drawable *item, SpicePoint *delta)
 {
     if (!delta->x && !delta->y) { 
@@ -4147,13 +4154,13 @@ static inline Shadow *__new_shadow(RedWorker *worker, Drawable *item, SpicePoint
     shadow->base.type = TREE_ITEM_TYPE_SHADOW;
     shadow->base.container = NULL; //shadow默认没有container
     shadow->owner = &item->tree_item; //触发shadow生成的copybits命令树节点
-    //设置copybits引用的区域，注意shadow的rgn中存的是被引用的区域，而不是目标区域
-    //目标区域在copybits中
-    region_clone(&shadow->base.rgn, &item->tree_item.base.rgn); //shadow的rgn为copybits的rgn
-    region_offset(&shadow->base.rgn, delta->x, delta->y);//将rgn进行偏移，得到引用的区域
-    ring_item_init(&shadow->base.siblings_link);//还没加入命令树
+    //Shadow的rgn与copy_bits命令的rgn强相关，只存在偏移关系
+    //因为delta时src-dst，所以可以通过region_offset, 直接偏移delta得到原图像的区域
+    region_clone(&shadow->base.rgn, &item->tree_item.base.rgn); //先复制copybits的rgn
+    region_offset(&shadow->base.rgn, delta->x, delta->y);//对copybits的rgn进行还原偏移
+    ring_item_init(&shadow->base.siblings_link);//创建出来不加命令树，同copybits一起添加
     region_init(&shadow->on_hold); //初始化on_hold区域
-    item->tree_item.shadow = shadow; //设置copybits的shadow
+    item->tree_item.shadow = shadow; //Shadow和copybits命令实现命令树节点的互指
     //创建时shadow没有直接加到树中
     return shadow;
 }
@@ -4182,7 +4189,7 @@ static inline int red_current_add_with_shadow(RedWorker *worker, Ring *ring, Dra
 
     // only primary surface streams are supported
     if (is_primary_surface(worker, item->surface_id)) {
-		/* 如果是主surface的copybits，需要将引用区域的 */
+		/* 如果是主surface的copybits，copybits的原区域跟视频的可视区域相交， */
         red_detach_streams_behind(worker, &shadow->base.rgn, NULL);
     }
 	//直接将shadow直接挂到命令式最前面
@@ -7870,8 +7877,8 @@ static FillBitsType red_marshall_qxl_draw_copy(RedWorker *worker,
                                            SpiceMarshaller *base_marshaller,
                                            DrawablePipeItem *dpi, int src_allowed_lossy)
 {
-    Drawable *item = dpi->drawable;
-    RedDrawable *drawable = item->red_drawable;
+    Drawable *drawable = dpi->drawable;
+    RedDrawable *red_drawable = drawable->red_drawable;
     DisplayChannelClient *dcc = RCC_TO_DCC(rcc);
     SpiceMarshaller *src_bitmap_out;
     SpiceMarshaller *mask_bitmap_out;
@@ -7879,15 +7886,15 @@ static FillBitsType red_marshall_qxl_draw_copy(RedWorker *worker,
     FillBitsType src_send_type;
 
     red_channel_client_init_send_data(rcc, SPICE_MSG_DISPLAY_DRAW_COPY, &dpi->dpi_pipe_item);
-    fill_base(base_marshaller, item);
-    copy = drawable->u.copy;
+    fill_base(base_marshaller, drawable);
+    copy = red_drawable->u.copy;
     spice_marshall_Copy(base_marshaller,
                         &copy,
                         &src_bitmap_out,
                         &mask_bitmap_out);
 
-    src_send_type = fill_bits(dcc, src_bitmap_out, copy.src_bitmap, item, src_allowed_lossy);
-    fill_mask(rcc, mask_bitmap_out, copy.mask.bitmap, item);
+    src_send_type = fill_bits(dcc, src_bitmap_out, copy.src_bitmap, drawable, src_allowed_lossy);
+    fill_mask(rcc, mask_bitmap_out, copy.mask.bitmap, drawable);
 
     return src_send_type;
 }
@@ -9341,7 +9348,7 @@ static void red_marshall_image(RedChannelClient *rcc, SpiceMarshaller *m, ImageI
     spice_chunks_destroy(chunks);
 }
 
-// 调制surface更新管道消息
+// 调制surface更新管道消息，将一个drawcopy命令使用命令中的裁剪区域调制到send_data
 static void red_display_marshall_upgrade(RedChannelClient *rcc, SpiceMarshaller *m,
                                          UpgradeItem *item)
 {
