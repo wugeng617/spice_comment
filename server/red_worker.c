@@ -10711,6 +10711,7 @@ static int display_channel_handle_stream_report(DisplayChannelClient *dcc,
     return TRUE;
 }
 
+//handle parsed消息
 static int display_channel_handle_message(RedChannelClient *rcc, uint32_t size, uint16_t type,
                                           void *message)
 {
@@ -10929,11 +10930,10 @@ CursorChannelClient *cursor_channel_create_rcc(CommonChannel *common,
     return ccc;
 }
 
-/* __new_channel - DisplayChannel和CursorChannel公共的通道创建函数, 类似PlaybackChannel
-  和RecordChannel也有一个公共的通道创建函数。此函数调用RedChannel实现代码中的接口
-  red_channel_create_parser来创建通道
-
-*/
+/**__new_channel - DisplayChannel和CursorChannel公共的通道创建函数,
+ * 类似PlaybackChannel和RecordChannel也有一个公共的通道创建函数。
+ * 此函数调用RedChannel实现代码中的接口,red_channel_create_parser来创建通道
+**/
 static RedChannel *__new_channel(
 	RedWorker *worker, int size, //size是实际通道的大小
 	uint32_t channel_type, //channel_type是通道类型
@@ -12606,6 +12606,7 @@ static void red_init(RedWorker *worker, WorkerInitData *init_data)
     worker->wakeup_counter = stat_add_counter(worker->stat, "wakeups", TRUE);
     worker->command_counter = stat_add_counter(worker->stat, "commands", TRUE);
 #endif
+	// 先把poll_fd的fd标记为-1，表示fd未被占有
     for (i = 0; i < MAX_EVENT_SOURCES; i++) {
         worker->poll_fds[i].fd = -1;
     }

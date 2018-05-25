@@ -130,7 +130,7 @@ typedef struct IncomingHandler {
     uint64_t serial; // 消息序号
 } IncomingHandler;
 
-/* 获取发送数据的尺寸 */
+/* 获取发送数据的尺寸，如果没有消息要发送，则应该返回0 */
 typedef int (*get_outgoing_msg_size_proc)(void *opaque);
 
 /* 准备发送数据，将待发送的数据存放在iovec中，并返回iovec的数量，
@@ -152,7 +152,7 @@ typedef void (*on_output_proc)(void *opaque, int n);
 
 // 通道数据发送器回调函数集合
 typedef struct OutgoingHandlerInterface {
-    get_outgoing_msg_size_proc get_msg_size; 
+    get_outgoing_msg_size_proc get_msg_size; //获取发送消息的大小
     prepare_outgoing_proc prepare;
     on_outgoing_error_proc on_error;
     on_outgoing_block_proc on_block;

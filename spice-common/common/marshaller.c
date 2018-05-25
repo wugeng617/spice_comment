@@ -45,16 +45,18 @@
 #define write_uint64(ptr,v) (*((uint64_t *)(ptr)) = v)
 #endif
 
+/* Marshaller条目 */
 typedef struct {
-    uint8_t *data;
-    size_t len;
-    spice_marshaller_item_free_func free_data;
-    void *opaque;
+    uint8_t *data; //数据地址
+    size_t len; //数据长度
+    spice_marshaller_item_free_func free_data; //Marshaller用完之后的数据释放回调
+    void *opaque; //回调函数占位指针
 } MarshallerItem;
 
 /* Try to fit in 4k page with 2*pointer-size overhead (next ptr and malloc size) */
 #define MARSHALLER_BUFFER_SIZE (4096 - sizeof(void *) * 2)
 
+/* MarshallerBuffer是个链表，每个buf都是4k */
 typedef struct MarshallerBuffer MarshallerBuffer;
 struct MarshallerBuffer {
     MarshallerBuffer *next;
@@ -79,47 +81,53 @@ struct SpiceMarshaller {
 
     MarshallerRef pointer_ref;
 
-    int n_items;
-    int items_size; /* number of items availible in items */
-    MarshallerItem *items;
+    int n_items; /* 下一个item的分配位置 */
+    int items_size; /* number of items availible in items，item缓冲区总数 */
+    MarshallerItem *items; /* item缓冲区指针，开始时指向预分配的static_items */
 
     MarshallerItem static_items[N_STATIC_ITEMS];
 };
 
+/*  */
 struct SpiceMarshallerData {
     size_t total_size;
     size_t base;
-    SpiceMarshaller *marshallers;
+    SpiceMarshaller *marshallers; //指向rootMashaller
     SpiceMarshaller *last_marshaller;
 
-    size_t current_buffer_position;
-    MarshallerBuffer *current_buffer;
-    MarshallerItem *current_buffer_item;
-    MarshallerBuffer *buffers;
+    size_t current_buffer_position; //当前buffer分配的位置
+    MarshallerBuffer *current_buffer; //当前buffer分配至指针
+    // 一个MashallerBuffer可能跟多个 MashallerItem关联
+    MarshallerItem *current_buffer_item; //当前buffer关联的Marshaller条目
+    MarshallerBuffer *buffers; //buffer列表，取staticbuffer的值，减少分配和NULL代码
+    //因为MashallerBuffer的空间是4K，所以是4K缓冲空间
 
     SpiceMarshaller static_marshaller;
-    MarshallerBuffer static_buffer;
+    MarshallerBuffer static_buffer; //
 };
 
 static void spice_marshaller_init(SpiceMarshaller *m,
                                   SpiceMarshallerData *data)
 {
-    m->data = data;
-    m->next = NULL;
-    m->total_size = 0;
-    m->pointer_ref.marshaller = NULL;
-    m->n_items = 0;
-    m->items_size = N_STATIC_ITEMS;
-    m->items = m->static_items;
+    m->data = data; //关联data
+    m->next = NULL; //Marshaller链表为空
+    m->total_size = 0; //总大小
+    m->pointer_ref.marshaller = NULL; //引用的Marshaller
+    m->n_items = 0; //初始分配位置
+    m->items_size = N_STATIC_ITEMS; //条目缓冲区大小
+    m->items = m->static_items; //条目缓冲区分配指针
 }
 
+// 创建一个Root SpiceMarshaller， RootMashaller时MarshallerData中包含的Masheller
 SpiceMarshaller *spice_marshaller_new(void)
 {
     SpiceMarshallerData *d;
     SpiceMarshaller *m;
 
+	// 先new一个SpiceMarshallerData
     d = spice_new(SpiceMarshallerData, 1);
 
+	// 初始化SpiceMarshallerData
     d->last_marshaller = d->marshallers = &d->static_marshaller;
     d->total_size = 0;
     d->base = 0;
@@ -129,12 +137,13 @@ SpiceMarshaller *spice_marshaller_new(void)
     d->current_buffer_position = 0;
     d->current_buffer_item = NULL;
 
-    m = &d->static_marshaller;
+    m = &d->static_marshaller; //取MashallerData的静态Marshaller，并和MashallerData建立关联
     spice_marshaller_init(m, d);
 
     return m;
 }
 
+// 释放Marsheller中所有条目持有的内存
 static void free_item_data(SpiceMarshaller *m)
 {
     MarshallerItem *item;
@@ -149,6 +158,7 @@ static void free_item_data(SpiceMarshaller *m)
     }
 }
 
+// 释放Mashaller中条目内存
 static void free_items(SpiceMarshaller *m)
 {
     if (m->items != m->static_items) {
@@ -156,6 +166,7 @@ static void free_items(SpiceMarshaller *m)
     }
 }
 
+// 重置一个RootMashaller
 void spice_marshaller_reset(SpiceMarshaller *m)
 {
     SpiceMarshaller *m2, *next;
@@ -164,30 +175,33 @@ void spice_marshaller_reset(SpiceMarshaller *m)
     /* Only supported for root marshaller */
     assert(m->data->marshallers == m);
 
-    for (m2 = m; m2 != NULL; m2 = next) {
+    for (m2 = m; m2 != NULL; m2 = next) { //从RootMashaller向后迭代
         next = m2->next;
-        free_item_data(m2);
+        free_item_data(m2); //释放条目持有的内存
+        //rootMashaller不会分配Marshaller条目？
 
         /* Free non-root marshallers */
-        if (m2 != m) {
+        if (m2 != m) {//对于非rootMashaller，释放掉条目内存和Mashaller本身
             free_items(m2);
             free(m2);
         }
     }
 
-    m->next = NULL;
-    m->n_items = 0;
+    m->next = NULL; //没有Mashaller链表了
+    m->n_items = 0; 
     m->total_size = 0;
 
+	//重置RootMashaller的MarshallerData
     d = m->data;
-    d->last_marshaller = d->marshallers;
-    d->total_size = 0;
-    d->base = 0;
-    d->current_buffer_item = NULL;
+    d->last_marshaller = d->marshallers; //都指向RootMashaller
+    d->total_size = 0; //总大小重置
+    d->base = 0; //base重置
+    d->current_buffer_item = NULL; 
     d->current_buffer = d->buffers;
     d->current_buffer_position = 0;
 }
 
+// 销毁一个RootMashaller
 void spice_marshaller_destroy(SpiceMarshaller *m)
 {
     MarshallerBuffer *buf, *next;
@@ -198,28 +212,29 @@ void spice_marshaller_destroy(SpiceMarshaller *m)
 
     spice_marshaller_reset(m);
 
-    free_items(m);
+    free_items(m); //为什么重置时不释放RootMashaller的条目内存
 
     d = m->data;
 
-    buf = d->buffers->next;
+    buf = d->buffers->next; //d->buffers指向静态buffer，所以从下一个开始迭代
     while (buf != NULL) {
-        next = buf->next;
-        free(buf);
+        next = buf->next; //先保存下一个的地址
+        free(buf); //释放MashallerBuffer
         buf = next;
     }
 
-    free(d);
+    free(d); //释放整个MarshallerData及其内含的Mashaller内存
 }
 
+// 从Marshaller中分配一个MarshallerItem
 static MarshallerItem *spice_marshaller_add_item(SpiceMarshaller *m)
 {
     MarshallerItem *item;
 
-    if (m->n_items == m->items_size) {
-        int items_size = m->items_size * 2;
+    if (m->n_items == m->items_size) {//缓冲区已经用完，指向缓冲区之后了
+        int items_size = m->items_size * 2; //2倍指数扩展
 
-        if (m->items == m->static_items) {
+        if (m->items == m->static_items) { //静态缓冲区用完的情况
             m->items = spice_new(MarshallerItem, items_size);
             memcpy(m->items, m->static_items, sizeof(MarshallerItem) * m->n_items);
         } else {
@@ -227,51 +242,59 @@ static MarshallerItem *spice_marshaller_add_item(SpiceMarshaller *m)
         }
         m->items_size = items_size;
     }
-    item = &m->items[m->n_items++];
+    item = &m->items[m->n_items++]; //n_items指向下一个分配的位置
     item->free_data = NULL;
 
     return item;
 }
 
+// 返回当前buffer剩余的空间
 static size_t remaining_buffer_size(SpiceMarshallerData *d)
 {
     return MARSHALLER_BUFFER_SIZE - d->current_buffer_position;
 }
 
+// 让Mashaller分配并持有一块内存空间
 uint8_t *spice_marshaller_reserve_space(SpiceMarshaller *m, size_t size)
 {
     MarshallerItem *item;
     SpiceMarshallerData *d;
     uint8_t *res;
 
-    if (size == 0) {
+    if (size == 0) { //异常参数，返回空
         return NULL;
     }
 
+	//取数据分配器
     d = m->data;
 
-    /* Check current item */
-    item = &m->items[m->n_items - 1];
+    /* Check current item, 先看当前item有没有空间 */
+    item = &m->items[m->n_items - 1]; 
     if (item == d->current_buffer_item &&
-        remaining_buffer_size(d) >= size) {
+        remaining_buffer_size(d) >= size) {//剩余空间比分配空间大
         assert(m->n_items >= 1);
         /* We can piggy back on existing item+buffer */
         res = item->data + item->len;
-        item->len += size;
-        d->current_buffer_position += size;
-        d->total_size += size;
-        m->total_size += size;
+        item->len += size; //条目的持有空间增加
+        d->current_buffer_position += size; //data的分配空间藏家
+        d->total_size += size; //总数据增加
+        m->total_size += size; //mashaller的数据增加
         return res;
     }
 
+	// 如果当前分配条目和当前的buffer关联的条目不一致
+	// 或者分配条目对应的buffer空间不够了
+
+	// 先创建一个分配条目
     item = spice_marshaller_add_item(m);
 
+	// 如果数据缓冲区的剩余空间超过size，则条目从buffer偏移分配空间
     if (remaining_buffer_size(d) >= size) {
         /* Fits in current buffer */
         item->data = d->current_buffer->data + d->current_buffer_position;
-        item->len = size;
-        d->current_buffer_position += size;
-        d->current_buffer_item = item;
+        item->len = size;//item直接取分配大小
+        d->current_buffer_position += size; //buffer占用自增
+        d->current_buffer_item = item; //buffer的item指向新的item
     } else if (size > MARSHALLER_BUFFER_SIZE / 2) {
         /* Large item, allocate by itself */
         item->data = (uint8_t *)spice_malloc(size);
@@ -304,8 +327,10 @@ void spice_marshaller_unreserve_space(SpiceMarshaller *m, size_t size)
         return;
     }
 
+	// 取前一个条目
     item = &m->items[m->n_items - 1];
 
+	// 不能夸item释放空间
     assert(item->len >= size);
     item->len -= size;
 }
@@ -342,6 +367,7 @@ uint8_t *spice_marshaller_add(SpiceMarshaller *m, const uint8_t *data, size_t si
     return ptr;
 }
 
+/* 让SpiceMarshaller分配一个MarshellerItem，并持有一块内存，这块内存需要一直有效 */
 uint8_t *spice_marshaller_add_ref(SpiceMarshaller *m, uint8_t *data, size_t size)
 {
     return spice_marshaller_add_ref_full(m, data, size, NULL, NULL);

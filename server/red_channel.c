@@ -388,7 +388,7 @@ static void red_peer_handle_outgoing(RedsStream *stream, OutgoingHandler *handle
     if (handler->size == 0) { //如果消息为0，表示要发送一个新消息
         handler->vec = handler->vec_buf;
         handler->size = handler->cb->get_msg_size(handler->opaque);
-        if (!handler->size) {  // nothing to be sent
+        if (!handler->size) {  //如果取得的消息为0，则说明没有消息要发送
             return;
         }
     }
