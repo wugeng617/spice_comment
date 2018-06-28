@@ -53,8 +53,13 @@ static inline uint32_t color_16_to_32(uint32_t color)
 {
     uint32_t ret;
 
-    ret = ((color & 0x001f) << 3) | ((color & 0x001c) >> 2);
+	// color是1x5r5g5b格式的16位， 等于PIXMAN_x1r5g5b5，或者PIXMAN_x1b5g5r5
+
+	//取color的1-5位作为第一个字节的高字节部分，取color的和345位作为第一个字节的低3位
+    ret = ((color & 0x001f) << 3) | ((color & 0x001c) >> 2); 
+    //取color的6-10位作为第二个字节的高字节部分，取color的8910位作为第二个字节的低3位
     ret |= ((color & 0x03e0) << 6) | ((color & 0x0380) << 1);
+	//取color的11-15位作为第三个字节的高字节部分，取color的131415位作为第二个字节的低3位
     ret |= ((color & 0x7c00) << 9) | ((color & 0x7000) << 4);
 
     return ret;
