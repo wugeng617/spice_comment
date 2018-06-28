@@ -12667,9 +12667,12 @@ SPICE_GNUC_NORETURN void *red_worker_main(void *arg)
         int i, num_events;
         unsigned int timers_queue_timeout;
 
+		/* worker的事件超时时间取，最近定时器时间间隔，流超时时间间隔， -1三者最小值作为poll超时时间 */
         timers_queue_timeout = spice_timer_queue_get_timeout_ms();
         worker->event_timeout = MIN(red_get_streams_timout(worker), worker->event_timeout);
         worker->event_timeout = MIN(timers_queue_timeout, worker->event_timeout);
+		
+		/*执行poll调用*/
         num_events = poll(worker->poll_fds, MAX_EVENT_SOURCES, worker->event_timeout);
         red_handle_streams_timout(worker);
         spice_timer_queue_cb();

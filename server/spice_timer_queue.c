@@ -53,6 +53,7 @@ struct SpiceTimerQueue {
     Ring active_timers; /* 活动定时器队列 */
 };
 
+/* 无锁版的定时器队列查找 */
 static SpiceTimerQueue *spice_timer_queue_find(void)
 {
     pthread_t self = pthread_self();
@@ -69,6 +70,7 @@ static SpiceTimerQueue *spice_timer_queue_find(void)
     return NULL;
 }
 
+/* 带锁版的定时器队列查找 */
 static SpiceTimerQueue *spice_timer_queue_find_with_lock(void)
 {
     SpiceTimerQueue *queue;
@@ -79,6 +81,7 @@ static SpiceTimerQueue *spice_timer_queue_find_with_lock(void)
     return queue;
 }
 
+/* 在当前线程创建一个定时器队列 */
 int spice_timer_queue_create(void)
 {
     SpiceTimerQueue *queue;
@@ -159,14 +162,15 @@ static void _spice_timer_set(SpiceTimer *timer, uint32_t ms, uint64_t now)
     RingItem *next_item;
     SpiceTimerQueue *queue;
 
-    if (timer->is_active) {
+    if (timer->is_active) { //已经激活的定时器先取消
         spice_timer_cancel(timer);
     }
 
     queue = timer->queue;
     timer->expiry_time = now + ms;
     timer->ms = ms;
-
+	
+	/* 定时器队列执行时间升序排列，所以找第一个比定时器时间后的定时器 */
     RING_FOREACH(next_item, &queue->active_timers) {
         SpiceTimer *next_timer = SPICE_CONTAINEROF(next_item, SpiceTimer, active_link);
 
@@ -175,6 +179,7 @@ static void _spice_timer_set(SpiceTimer *timer, uint32_t ms, uint64_t now)
         }
     }
 
+	/* 插入定时器 */
     if (next_item) {
         ring_add_before(&timer->active_link, next_item);
     } else {
@@ -183,6 +188,7 @@ static void _spice_timer_set(SpiceTimer *timer, uint32_t ms, uint64_t now)
     timer->is_active = TRUE;
 }
 
+/* 设置一个定时器的执行时间，只能由定时器队列线程来设置 */
 void spice_timer_set(SpiceTimer *timer, uint32_t ms)
 {
     struct timespec now;
@@ -194,15 +200,19 @@ void spice_timer_set(SpiceTimer *timer, uint32_t ms)
                      (uint64_t)now.tv_sec * 1000 + (now.tv_nsec / 1000 / 1000));
 }
 
+/* 取消一个定时器 */
 void spice_timer_cancel(SpiceTimer *timer)
 {
+	/* 只能由创建定时器队列的线程来取消定时器 */
     spice_assert(pthread_equal(timer->queue->thread, pthread_self()) != 0);
 
+	/* 定时器没有激活，直接返回 */
     if (!ring_item_is_linked(&timer->active_link)) {
         spice_assert(!timer->is_active);
         return;
     }
 
+	/* 将定时器从活动队列移除并设置活动标记 */
     spice_assert(timer->is_active);
     ring_remove(&timer->active_link);
     timer->is_active = FALSE;
@@ -228,6 +238,7 @@ void spice_timer_remove(SpiceTimer *timer)
     free(timer);
 }
 
+/* 获取当前定时器队列最近一个活动定时器距离当前时间的时间差值，单位ms，如果没有活动定时器则返回-1 */
 unsigned int spice_timer_queue_get_timeout_ms(void)
 {
     struct timespec now;
@@ -251,7 +262,8 @@ unsigned int spice_timer_queue_get_timeout_ms(void)
     return MAX(0, ((int64_t)head_timer->expiry_time - now_ms));
 }
 
-
+/* 定时器驱动函数，执行定时器里的回调函数，根据spice_timer_queue_get_timeout_ms来不断
+的调用 spice_timer_queue_cb函数，就可以让定时器得到执行 */
 void spice_timer_queue_cb(void)
 {
     struct timespec now;
@@ -271,11 +283,11 @@ void spice_timer_queue_cb(void)
     while ((head = ring_get_head(&queue->active_timers))) {
         SpiceTimer *timer = SPICE_CONTAINEROF(head, SpiceTimer, active_link);
 
-        if (timer->expiry_time > now_ms) {
+        if (timer->expiry_time > now_ms) {//如果没有到达执行时间则结束定时器的执行
             break;
         } else {
-            timer->func(timer->opaque);
-            spice_timer_cancel(timer);
+            timer->func(timer->opaque); //执行定时器函数并且取消定时器
+            spice_timer_cancel(timer); //定时器只会执行一次定时器回调函数，所以重复定时器需要不断的设置定时器
         }
     }
 }
