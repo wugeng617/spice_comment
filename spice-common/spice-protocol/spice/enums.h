@@ -331,9 +331,9 @@ typedef enum SpiceCursorType {
 } SpiceCursorType;
 
 typedef enum SpiceCursorFlags {
-    SPICE_CURSOR_FLAGS_NONE = (1 << 0),
-    SPICE_CURSOR_FLAGS_CACHE_ME = (1 << 1),
-    SPICE_CURSOR_FLAGS_FROM_CACHE = (1 << 2),
+    SPICE_CURSOR_FLAGS_NONE = (1 << 0), //无标记
+    SPICE_CURSOR_FLAGS_CACHE_ME = (1 << 1), //CACHE
+    SPICE_CURSOR_FLAGS_FROM_CACHE = (1 << 2), //从CACHE中取
 
     SPICE_CURSOR_FLAGS_MASK = 0x7
 } SpiceCursorFlags;

@@ -100,6 +100,7 @@ typedef struct RedSurfaceCmd {
     } u;
 } RedSurfaceCmd;
 
+/* 光标命令 */
 typedef struct RedCursorCmd {
     QXLReleaseInfo *release_info;
     uint8_t type;

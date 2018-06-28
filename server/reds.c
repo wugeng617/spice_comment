@@ -3069,6 +3069,21 @@ SPICE_GNUC_VISIBLE int spice_server_add_interface(SpiceServer *s,
         if (inputs_set_mouse(SPICE_CONTAINEROF(sin, SpiceMouseInstance, base)) != 0) {
             return -1;
         }
+    } else if (strcmp(interface->type, SPICE_INTERFACE_TABLET) == 0) {
+        spice_info("SPICE_INTERFACE_TABLET");
+        if (interface->major_version != SPICE_INTERFACE_TABLET_MAJOR ||
+            interface->minor_version > SPICE_INTERFACE_TABLET_MINOR) {
+            spice_warning("unsupported tablet interface");
+            return -1;
+        }
+        if (inputs_set_tablet(SPICE_CONTAINEROF(sin, SpiceTabletInstance, base)) != 0) {
+            return -1;
+        }
+        reds_update_mouse_mode();
+        if (reds->is_client_mouse_allowed) {
+            inputs_set_tablet_logical_size(reds->monitor_mode.x_res, reds->monitor_mode.y_res);
+        }
+
     } else if (strcmp(interface->type, SPICE_INTERFACE_QXL) == 0) {
     	//创建QXL对象时执行
         QXLInstance *qxl;
@@ -3087,21 +3102,6 @@ SPICE_GNUC_VISIBLE int spice_server_add_interface(SpiceServer *s,
         qxl->st->qif = SPICE_CONTAINEROF(interface, QXLInterface, base);
 		//初始化red_dispatcher
         red_dispatcher_init(qxl);
-
-    } else if (strcmp(interface->type, SPICE_INTERFACE_TABLET) == 0) {
-        spice_info("SPICE_INTERFACE_TABLET");
-        if (interface->major_version != SPICE_INTERFACE_TABLET_MAJOR ||
-            interface->minor_version > SPICE_INTERFACE_TABLET_MINOR) {
-            spice_warning("unsupported tablet interface");
-            return -1;
-        }
-        if (inputs_set_tablet(SPICE_CONTAINEROF(sin, SpiceTabletInstance, base)) != 0) {
-            return -1;
-        }
-        reds_update_mouse_mode();
-        if (reds->is_client_mouse_allowed) {
-            inputs_set_tablet_logical_size(reds->monitor_mode.x_res, reds->monitor_mode.y_res);
-        }
 
     } else if (strcmp(interface->type, SPICE_INTERFACE_PLAYBACK) == 0) {
         spice_info("SPICE_INTERFACE_PLAYBACK");

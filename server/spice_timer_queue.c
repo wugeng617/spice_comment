@@ -21,34 +21,36 @@
 #include "spice_timer_queue.h"
 #include "common/ring.h"
 
-static Ring timer_queue_list;
-static int queue_count = 0;
-static pthread_mutex_t queue_list_lock = PTHREAD_MUTEX_INITIALIZER;
+static Ring timer_queue_list; /* 全局的定时器队列链表，链接SpiceTimerQueue */
+static int queue_count = 0; /*定时器队列长度*/
+static pthread_mutex_t queue_list_lock = PTHREAD_MUTEX_INITIALIZER; /*定时器队列锁*/
 
 static void spice_timer_queue_init(void)
 {
     ring_init(&timer_queue_list);
 }
 
+/* spice定时器 */
 struct SpiceTimer {
-    RingItem link;
-    RingItem active_link;
+    RingItem link; /* 插入定时器队列的 timers链表 */
+    RingItem active_link; /* 接入到定时器队列的active_timers链表 */
 
-    SpiceTimerFunc func;
-    void *opaque;
+    SpiceTimerFunc func; /* 定时器回调函数 */
+    void *opaque; /* 定时器回调函数占位指针 */
 
-    SpiceTimerQueue *queue;
+    SpiceTimerQueue *queue; /* 定时器所属的定时器队列 */
 
-    int is_active;
+    int is_active; /* 定时器是否已经激活 */
     uint32_t ms;
-    uint64_t expiry_time;
+    uint64_t expiry_time; /* 超时时间 */
 };
 
+/* 定时器队列 */
 struct SpiceTimerQueue {
-    RingItem link;
-    pthread_t thread;
-    Ring timers;
-    Ring active_timers;
+    RingItem link; /* 连接定时器 */
+    pthread_t thread; /* 创建定时器队列的线程，作为定时器队列的关键字 */
+    Ring timers; /* 定时器队列 */
+    Ring active_timers; /* 活动定时器队列 */
 };
 
 static SpiceTimerQueue *spice_timer_queue_find(void)
@@ -58,8 +60,8 @@ static SpiceTimerQueue *spice_timer_queue_find(void)
 
     RING_FOREACH(queue_item, &timer_queue_list) {
          SpiceTimerQueue *queue = SPICE_CONTAINEROF(queue_item, SpiceTimerQueue, link);
-
-         if (pthread_equal(self, queue->thread) != 0) {
+		 /* 当前线程和定时器队列的创建线程是否一致 */
+         if (pthread_equal(self, queue->thread) != 0) {//相同返回当前定时器队列
             return queue;
          }
     }
@@ -96,6 +98,7 @@ int spice_timer_queue_create(void)
     ring_init(&queue->timers);
     ring_init(&queue->active_timers);
 
+	//加入定时器队列全局链表
     ring_add(&timer_queue_list, &queue->link);
     queue_count++;
 
@@ -104,6 +107,7 @@ int spice_timer_queue_create(void)
     return TRUE;
 }
 
+/* 销毁调用此函数的线程中的定时器队列，要求此线程创建过定时器队列                                */
 void spice_timer_queue_destroy(void)
 {
     RingItem *item;
@@ -112,8 +116,9 @@ void spice_timer_queue_destroy(void)
     pthread_mutex_lock(&queue_list_lock);
     queue = spice_timer_queue_find();
 
-    spice_assert(queue != NULL);
+    spice_assert(queue != NULL); //调用者线程必须创建了定时器队列
 
+	/* 清理所有定时器 */
     while ((item = ring_get_head(&queue->timers))) {
         SpiceTimer *timer;
 
@@ -121,6 +126,7 @@ void spice_timer_queue_destroy(void)
         spice_timer_remove(timer);
     }
 
+	/* 将定时器队列从 */
     ring_remove(&queue->link);
     free(queue);
     queue_count--;
@@ -128,6 +134,7 @@ void spice_timer_queue_destroy(void)
     pthread_mutex_unlock(&queue_list_lock);
 }
 
+/* 添加定时器，要求当前线程必须创建了定时器队列 */
 SpiceTimer *spice_timer_queue_add(SpiceTimerFunc func, void *opaque)
 {
     SpiceTimer *timer = spice_new0(SpiceTimer, 1);
@@ -201,17 +208,23 @@ void spice_timer_cancel(SpiceTimer *timer)
     timer->is_active = FALSE;
 }
 
+/* 移除一个定时器 */
 void spice_timer_remove(SpiceTimer *timer)
 {
+	/* 定时器必须已经加入定时器队列 */
     spice_assert(timer->queue);
     spice_assert(ring_item_is_linked(&timer->link));
+	/* 只能由定时器队列线程可以移除定时器 */
     spice_assert(pthread_equal(timer->queue->thread, pthread_self()) != 0);
 
     if (timer->is_active) {
+		/* 激活的定时器必定已经加入了定时器队列的活动列表 */
         spice_assert(ring_item_is_linked(&timer->active_link));
-        ring_remove(&timer->active_link);
+        ring_remove(&timer->active_link); /* 从活动队列中摘除 */
     }
+	/* 从定时器队列中摘除 */
     ring_remove(&timer->link);
+	/* 释放定时器内存 */
     free(timer);
 }
 
