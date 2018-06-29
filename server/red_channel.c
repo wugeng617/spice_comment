@@ -2449,6 +2449,7 @@ uint32_t red_channel_min_pipe_size(RedChannel *channel)
         rcc = SPICE_CONTAINEROF(link, RedChannelClient, channel_link);
         pipe_size = pipe_size < rcc->pipe_size ? pipe_size : rcc->pipe_size;
     }
+	/* 如果管道大小为~0，说明没有RCC，直接返回0，否则返回rcc中的最小的PIPESIZE */
     return pipe_size == ~0 ? 0 : pipe_size;
 }
 

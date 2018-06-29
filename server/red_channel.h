@@ -366,7 +366,7 @@ struct RedChannelClient {
     OutgoingHandler outgoing;//数据发送器
     IncomingHandler incoming;//数据接收器
     int during_send;// 正在发送数据标记
-    int id; // ID，debugging purposes
+    int id; // ID，debugging purposes，RCC标号
     Ring pipe; //发送管道
     uint32_t pipe_size; //发送管道项数
 
@@ -401,7 +401,7 @@ struct RedChannel {
     // Maybe replace these logic with ref count?
     // TODO: rename to 'connected_clients'?
     Ring clients; //RCC链表
-    uint32_t clients_num; //RCC数量
+    uint32_t clients_num; //RCC数量,同时用作rcc的id
 
 	/*RedChannel里有处理收发数据的接口OutgoingHandlerInterface
 	  和IncomingHandlerInterface，RCC里也有OutgoingHandler和
