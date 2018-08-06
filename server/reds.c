@@ -2122,6 +2122,7 @@ static void reds_handle_link_error(void *opaque, int err)
     reds_link_free(link);
 }
 
+/* spice服务端接收到LINK消息头部后的回调函数            */
 static void reds_handle_read_header_done(void *opaque)
 {
     RedLinkInfo *link = (RedLinkInfo *)opaque;

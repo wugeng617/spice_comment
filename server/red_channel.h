@@ -134,8 +134,9 @@ typedef struct IncomingHandler {
 typedef int (*get_outgoing_msg_size_proc)(void *opaque);
 
 /* 准备发送数据，将待发送的数据存放在iovec中，并返回iovec的数量，
-   pos表示要跳过的数据数量，发送一个消息包可能需要多次调用此函数
-   来取得发送的数据，pos就是要跳过已经发送的数据数量 */
+   pos表示要跳过的数据数量，发送一个spice协议消息时可能被中断（如socket写满、信号中断）
+   所以一个消息可能需要多次调用此函数，才可以把消息发送完毕。
+   pos表示已经发送过的数据量，因此是本次发送需要跳过的已发送数据量 */
 typedef void (*prepare_outgoing_proc)(void *opaque, struct iovec *vec, int *vec_size, int pos);
 
 /* 发送失败返回前的错误处理函数 */
@@ -150,25 +151,25 @@ typedef void (*on_outgoing_msg_done_proc)(void *opaque);
 /* 发送数据成功时的回调函数 */
 typedef void (*on_output_proc)(void *opaque, int n);
 
-// 通道数据发送器回调函数集合
+/* 数据发送器操作和回调函数集合 */
 typedef struct OutgoingHandlerInterface {
     get_outgoing_msg_size_proc get_msg_size; //获取发送消息的大小
-    prepare_outgoing_proc prepare;
-    on_outgoing_error_proc on_error;
-    on_outgoing_block_proc on_block;
-    on_outgoing_msg_done_proc on_msg_done;
-    on_output_proc on_output;
+    prepare_outgoing_proc prepare; //消息准备接口
+    on_outgoing_error_proc on_error; //消息出错例程
+    on_outgoing_block_proc on_block; //消息阻塞例程
+    on_outgoing_msg_done_proc on_msg_done; //消息发送完成例程
+    on_output_proc on_output; //发送了一部分消息的例程
 } OutgoingHandlerInterface;
 
-// 数据发送器结构
+// 数据发送器
 typedef struct OutgoingHandler {
     OutgoingHandlerInterface *cb; //数据发送器的回调函数集合
-    void *opaque; //发送器占位指针，用于数据发送器回调函数的调用
+    void *opaque; //发送器占位指针，指向RCC
     struct iovec vec_buf[IOV_MAX]; // 静态iovec数组，被vec引用
     int vec_size; //iovec的有效数量
     struct iovec *vec; //iovec列表
     int pos;  //当前已发送数据量
-    int size; //发送消息的大小，整个消息，包括头部，
+    int size; //发送消息的大小，包括头部的整个消息的大小，
               //发送消息时，当发现此值为0，则表示要发送一个新消息
               //要调用get_outgoing_msg_size_proc get_msg_size来获取消息大小
 } OutgoingHandler;
@@ -343,7 +344,7 @@ struct RedChannelClient {
     struct {
 		//公共部分是当前发送使用的数据，在发送紧急数据
 		//或者恢复成发送普通数据时，这些值会进行更新
-        SpiceMarshaller *marshaller; //调制解调器，其中包含了一个待发送消息的内容
+        SpiceMarshaller *marshaller; /* 当前rcc使用的mashaller，在urgent和main的mashaller之间切换 */
         SpiceDataHeaderOpaque header; //SPICE协议头操作对象
         uint32_t size; //待发送消息， 创建时没有直接初始化
         PipeItem *item; //当前待发送消息的管道项， 创建时没有直接初始化

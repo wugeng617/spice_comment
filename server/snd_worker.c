@@ -140,7 +140,7 @@ struct PlaybackChannel {
     AudioFrame *in_progress; //正在处理帧
     AudioFrame *pending_frame; //待发送的帧
     uint32_t mode; //数据模式，RAW|CELT|OPUS
-    uint32_t latency; //延时
+    uint32_t latency; //记录延时，被snd_set_playback_latency设置
     SndCodec codec; //编解码器，回放通道里只用到了编码
     uint8_t  encode_buf[SND_CODEC_MAX_COMPRESSED_BYTES]; 
 	//编码缓冲区，编码后最大的尺寸，当前是480，CELT实际只用了47个字节

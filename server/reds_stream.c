@@ -33,13 +33,14 @@
 
 #include <openssl/err.h>
 
+/* 异步读请求 */
 struct AsyncRead {
-    RedsStream *stream; //建立AsyncRead和RedsStream的关联关系
-    void *opaque; //异步读回调的占位指针
-    uint8_t *now; //当前读取位置
-    uint8_t *end; //读取末尾
-    AsyncReadDone done; //读完成处理函数
-    AsyncReadError error; //读出错处理函数
+    RedsStream *stream; /* 读取的流 */
+    void *opaque; /* 占位指针，读完之后调用回调函数时使用 */
+    uint8_t *now; /* 目标缓冲区开始位置 */
+    uint8_t *end; /* 目标缓冲区结束位置 */
+    AsyncReadDone done; /* 异步读完处理函数 */
+    AsyncReadError error; /* 异步读出 */
 };
 typedef struct AsyncRead AsyncRead;
 
@@ -416,6 +417,12 @@ static inline void async_read_clear_handlers(AsyncRead *async)
     async->stream = NULL;
 }
 
+/**
+ * async_read_handler - 异步读实际执行函数接口
+ * @fd 无用参数
+ * @event 没用到的参数
+ * @data AsyncRead异步读请求
+**/
 static void async_read_handler(G_GNUC_UNUSED int fd,
                                G_GNUC_UNUSED int event,
                                void *data)

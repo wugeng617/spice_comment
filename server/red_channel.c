@@ -927,8 +927,8 @@ void red_channel_client_start_connectivity_monitoring(RedChannelClient *rcc, uin
 /**
  * red_channel_client_create - 创建真实的RCC
  * size 实际RCC子类的大小
- * channel RCC所属通道的实例
- * client RCC所属的客户端实例
+ * channel RCC关联的通道的实例
+ * client RCC关联的客户端实例
  * stream RCC对应的socket流
  * monitor_latency 是否检控RCC的延时，发送ping包
  * 后面的则是通用caps和通道caps
@@ -941,7 +941,7 @@ red_channel_client_create(int size, RedChannel *channel,
 {
     RedChannelClient *rcc = NULL;
 
-	//加RedClient锁，防止并发
+	//加RedClient锁，防止两个客户端同时创建RCC
     pthread_mutex_lock(&client->lock);
 	
 	//重复性检查
