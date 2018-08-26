@@ -302,8 +302,8 @@ enum {
     PIPE_ITEM_TYPE_PIXMAP_RESET, //PIXMAP重置
     PIPE_ITEM_TYPE_INVAL_CURSOR_CACHE,
     PIPE_ITEM_TYPE_INVAL_PALLET_CACHE,
-    PIPE_ITEM_TYPE_CREATE_SURFACE,
-    PIPE_ITEM_TYPE_DESTROY_SURFACE,
+    PIPE_ITEM_TYPE_CREATE_SURFACE, //发送surface创建消息
+    PIPE_ITEM_TYPE_DESTROY_SURFACE, //发送surface销毁消息
     PIPE_ITEM_TYPE_MONITORS_CONFIG,
     PIPE_ITEM_TYPE_STREAM_ACTIVATE_REPORT,
 };
@@ -330,6 +330,7 @@ struct NewCacheItem {
 
 typedef struct CacheItem CacheItem;
 
+/* CacheItem和NewCacheItem */
 struct CacheItem {
     union {
         PipeItem pipe_data;
@@ -703,11 +704,12 @@ typedef struct CommonChannel {
                                   of the primary surface) */
 } CommonChannel;
 
+/* 显示和光标RCC公共对象 */
 typedef struct CommonChannelClient {
     RedChannelClient base;
-    uint32_t id;
-    struct RedWorker *worker;
-    int is_low_bandwidth;
+    uint32_t id; //ID
+    struct RedWorker *worker; //指向所属的RedWorker
+    int is_low_bandwidth; //是不是低带宽模式
 } CommonChannelClient;
 
 /* Each drawable can refer to at most 3 images: src, brush and mask 
@@ -715,6 +717,7 @@ typedef struct CommonChannelClient {
 */
 #define MAX_DRAWABLE_PIXMAP_CACHE_ITEMS 3
 
+/* 显示通道客户端 */
 struct DisplayChannelClient {
     CommonChannelClient common;
 
@@ -9660,25 +9663,25 @@ static void display_channel_send_item(RedChannelClient *rcc, PipeItem *pipe_item
         red_reset_palette_cache(dcc);
         red_marshall_verb(rcc, SPICE_MSG_DISPLAY_INVAL_ALL_PALETTES);
         break;
-    case PIPE_ITEM_TYPE_CREATE_SURFACE: {
+    case PIPE_ITEM_TYPE_CREATE_SURFACE: {// surface创建消息
         SurfaceCreateItem *surface_create = SPICE_CONTAINEROF(pipe_item, SurfaceCreateItem,
                                                               pipe_item);
         red_marshall_surface_create(rcc, m, &surface_create->surface_create);
         break;
     }
-    case PIPE_ITEM_TYPE_DESTROY_SURFACE: {
+    case PIPE_ITEM_TYPE_DESTROY_SURFACE: {// surface销毁消息
         SurfaceDestroyItem *surface_destroy = SPICE_CONTAINEROF(pipe_item, SurfaceDestroyItem,
                                                                 pipe_item);
         red_marshall_surface_destroy(rcc, m, surface_destroy->surface_destroy.surface_id);
         break;
     }
-    case PIPE_ITEM_TYPE_MONITORS_CONFIG: {
+    case PIPE_ITEM_TYPE_MONITORS_CONFIG: {// monitor配置消息
         MonitorsConfigItem *monconf_item = SPICE_CONTAINEROF(pipe_item,
                                                              MonitorsConfigItem, pipe_item);
         red_marshall_monitors_config(rcc, m, monconf_item->monitors_config);
         break;
     }
-    case PIPE_ITEM_TYPE_STREAM_ACTIVATE_REPORT: {
+    case PIPE_ITEM_TYPE_STREAM_ACTIVATE_REPORT: {// 
         StreamActivateReportItem *report_item = SPICE_CONTAINEROF(pipe_item,
                                                                   StreamActivateReportItem,
                                                                   pipe_item);

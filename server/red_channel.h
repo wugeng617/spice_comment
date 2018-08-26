@@ -74,8 +74,7 @@ struct SpiceDataHeaderOpaque {
 };
 
 /* 直接处理字节流的消息句柄 */
-typedef int (*handle_message_proc)(void *opaque,
-                                   uint16_t type, uint32_t size, uint8_t *msg);
+typedef int (*handle_message_proc)(void *opaque, uint16_t type, uint32_t size, uint8_t *msg);
 
 /* 处理解析后内存消息对象的句柄，为了和handle_message_proc原型区分，
 这个函数的原型把type和size参数的位置换了一下，msg的指针类型只是声明上有点不同 */
@@ -334,11 +333,11 @@ struct RedChannelClient {
     uint32_t refs; //引用计数
 
     struct {
-        uint32_t generation; //本地会话ID，创建时没有直接初始化
+        uint32_t generation; //本地会话ID，创建时没有直接初始化，以区分同一个客户端的两次连接
         uint32_t client_generation; //客户端的会话ID
         uint32_t messages_window; //本地消息窗口
         uint32_t client_window; //客户端消息窗口
-    } ack_data; //连接ACK信息
+    } ack_data; //连接ACK信息， 用于协商
 
     struct {
 		//公共部分是当前发送使用的数据，在发送紧急数据
@@ -347,7 +346,7 @@ struct RedChannelClient {
         SpiceDataHeaderOpaque header; //SPICE协议头操作对象
         uint32_t size; //待发送消息， 创建时没有直接初始化
         PipeItem *item; //当前待发送消息的管道项， 创建时没有直接初始化
-        //以下部分切花数据发送器不会改变，是跟Redsstream相关的
+        //以下部分切换数发送器不会改变，是跟Redsstream相关的
         int blocked; //socket流是否发生阻塞， 创建时没有直接初始化
         uint64_t serial; //socket流消息序号，创建时没有直接初始化
         uint64_t last_sent_serial; //上次发送序号， 创建时没有直接初始化
