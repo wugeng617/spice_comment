@@ -53,11 +53,11 @@ void dispatcher_send_message(Dispatcher *dispatcher, uint32_t message_type,
  */
 void dispatcher_init(Dispatcher *dispatcher, size_t max_message_type,
                      void *opaque);
-
+/* Dispatcher支持3种消息分发类型 */
 enum {
-    DISPATCHER_NONE = 0,
-    DISPATCHER_ACK,
-    DISPATCHER_ASYNC
+    DISPATCHER_NONE = 0, //消息分发
+    DISPATCHER_ACK, //消息分发后等待消息的处理结果
+    DISPATCHER_ASYNC //消息分发后不等消息被处理完成直接返回，消息的处理是异步的
 };
 
 /*
