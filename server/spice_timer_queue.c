@@ -169,7 +169,7 @@ static void _spice_timer_set(SpiceTimer *timer, uint32_t ms, uint64_t now)
     queue = timer->queue;
     timer->expiry_time = now + ms;
     timer->ms = ms;
-	
+	
 	/* 定时器队列执行时间升序排列，所以找第一个比定时器时间后的定时器 */
     RING_FOREACH(next_item, &queue->active_timers) {
         SpiceTimer *next_timer = SPICE_CONTAINEROF(next_item, SpiceTimer, active_link);

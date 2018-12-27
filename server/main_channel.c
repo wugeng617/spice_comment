@@ -60,22 +60,22 @@
 static uint8_t zero_page[ZERO_BUF_SIZE] = {0};
 
 enum {
-    PIPE_ITEM_TYPE_MAIN_CHANNELS_LIST = PIPE_ITEM_TYPE_CHANNEL_BASE, //Í¨µÀÁĞ±í¹ÜµÀÏî
-    PIPE_ITEM_TYPE_MAIN_PING, //PINGÏûÏ¢¹ÜµÀÏî
-    PIPE_ITEM_TYPE_MAIN_MOUSE_MODE, //Êó±êÄ£Ê½ÏûÏ¢¹ÜµÀÏî
-    PIPE_ITEM_TYPE_MAIN_AGENT_DISCONNECTED, //agent¶Ï¿ª¹ÜµÀÏî
-    PIPE_ITEM_TYPE_MAIN_AGENT_TOKEN, //agentÁîÅÆ¹ÜµÀÏî
-    PIPE_ITEM_TYPE_MAIN_AGENT_DATA, //agentÊı¾İ¹ÜµÀÏî
-    PIPE_ITEM_TYPE_MAIN_MIGRATE_DATA, //Ç¨ÒÆÊı¾İ¹ÜµÀÏî
-    PIPE_ITEM_TYPE_MAIN_INIT, //Ö÷Í¨µÀ³õÊ¼»¯ÏûÏ¢¹ÜµÀÏî£¬initµÄ·´À¡ÏûÏ¢
-    PIPE_ITEM_TYPE_MAIN_NOTIFY, //Ö÷Í¨µÀÍ¨µÀÏûÏ¢¹ÜµÀÏî
-    PIPE_ITEM_TYPE_MAIN_MIGRATE_BEGIN, //Ç¨ÒÆ¿ªÊ¼ÏûÏ¢
-    PIPE_ITEM_TYPE_MAIN_MIGRATE_BEGIN_SEAMLESS, //ÎŞ·ìÇ¨ÒÆ¿ªÊ¼ÏûÏ¢
-    PIPE_ITEM_TYPE_MAIN_MIGRATE_SWITCH_HOST, //Ç¨ÒÆÇĞ»»Ö÷»ú
-    PIPE_ITEM_TYPE_MAIN_MULTI_MEDIA_TIME, //MM timeÊ±¼äÏûÏ¢
-    PIPE_ITEM_TYPE_MAIN_NAME, //Ãû³ÆÏûÏ¢
-    PIPE_ITEM_TYPE_MAIN_UUID, //UUIDÏûÏ¢
-    PIPE_ITEM_TYPE_MAIN_AGENT_CONNECTED_TOKENS, //AGENTÒÑÁ¬½ÓÁîÅÆÏûÏ¢
+    PIPE_ITEM_TYPE_MAIN_CHANNELS_LIST = PIPE_ITEM_TYPE_CHANNEL_BASE, //é€šé“åˆ—è¡¨ç®¡é“é¡¹
+    PIPE_ITEM_TYPE_MAIN_PING, //PINGæ¶ˆæ¯ç®¡é“é¡¹
+    PIPE_ITEM_TYPE_MAIN_MOUSE_MODE, //é¼ æ ‡æ¨¡å¼æ¶ˆæ¯ç®¡é“é¡¹
+    PIPE_ITEM_TYPE_MAIN_AGENT_DISCONNECTED, //agentæ–­å¼€ç®¡é“é¡¹
+    PIPE_ITEM_TYPE_MAIN_AGENT_TOKEN, //agentä»¤ç‰Œç®¡é“é¡¹
+    PIPE_ITEM_TYPE_MAIN_AGENT_DATA, //agentæ•°æ®ç®¡é“é¡¹
+    PIPE_ITEM_TYPE_MAIN_MIGRATE_DATA, //è¿ç§»æ•°æ®ç®¡é“é¡¹
+    PIPE_ITEM_TYPE_MAIN_INIT, //ä¸»é€šé“åˆå§‹åŒ–æ¶ˆæ¯ç®¡é“é¡¹ï¼Œinitçš„åé¦ˆæ¶ˆæ¯
+    PIPE_ITEM_TYPE_MAIN_NOTIFY, //ä¸»é€šé“é€šé“æ¶ˆæ¯ç®¡é“é¡¹
+    PIPE_ITEM_TYPE_MAIN_MIGRATE_BEGIN, //è¿ç§»å¼€å§‹æ¶ˆæ¯
+    PIPE_ITEM_TYPE_MAIN_MIGRATE_BEGIN_SEAMLESS, //æ— ç¼è¿ç§»å¼€å§‹æ¶ˆæ¯
+    PIPE_ITEM_TYPE_MAIN_MIGRATE_SWITCH_HOST, //è¿ç§»åˆ‡æ¢ä¸»æœº
+    PIPE_ITEM_TYPE_MAIN_MULTI_MEDIA_TIME, //MM timeæ—¶é—´æ¶ˆæ¯
+    PIPE_ITEM_TYPE_MAIN_NAME, //åç§°æ¶ˆæ¯
+    PIPE_ITEM_TYPE_MAIN_UUID, //UUIDæ¶ˆæ¯
+    PIPE_ITEM_TYPE_MAIN_AGENT_CONNECTED_TOKENS, //AGENTå·²è¿æ¥ä»¤ç‰Œæ¶ˆæ¯
 };
 
 typedef struct RedsOutItem RedsOutItem;
@@ -88,17 +88,17 @@ typedef struct RefsPipeItem {
     int *refs;
 } RefsPipeItem;
 
-// pingÏûÏ¢¹ÜµÀÏî½á¹¹
+// pingæ¶ˆæ¯ç®¡é“é¡¹ç»“æ„
 typedef struct PingPipeItem {
     PipeItem base;
-    int size; //Ê£Óà¿Õ¼ä
+    int size; //å‰©ä½™ç©ºé—´
 } PingPipeItem;
 
-// Ö÷Í¨µÀ·¢ËÍµÄÊó±êÄ£Ê½ÏûÏ¢¹ÜµÀÏî
+// ä¸»é€šé“å‘é€çš„é¼ æ ‡æ¨¡å¼æ¶ˆæ¯ç®¡é“é¡¹
 typedef struct MouseModePipeItem {
     PipeItem base;
-    int current_mode; //µ±Ç°Êó±êÄ£Ê½
-    int is_client_mouse_allowed; //ÊÇ·ñÖ§³Ö¿Í»§¶ËÊó±êÄ£Ê½
+    int current_mode; //å½“å‰é¼ æ ‡æ¨¡å¼
+    int is_client_mouse_allowed; //æ˜¯å¦æ”¯æŒå®¢æˆ·ç«¯é¼ æ ‡æ¨¡å¼
 } MouseModePipeItem;
 
 typedef struct TokensPipeItem {
@@ -116,12 +116,12 @@ typedef struct AgentDataPipeItem {
 
 typedef struct InitPipeItem {
     PipeItem base; 
-    int connection_id; //·µ»ØÁ¬½Óid
-    int display_channels_hint; //ÏÔÊ¾Í¨µÀÌáÊ¾
-    int current_mouse_mode; //µ±Ç°Êó±êÄ£Ê½
-    int is_client_mouse_allowed; //ÊÇ·ñÔÊĞí¿Í»§¶ËÊó±êÄ£Ê½
-    int multi_media_time; //³õÊ¼mmÊÂ¼ş
-    int ram_hint; //qxlÏÔ¿¨ÄÚ´æram´óĞ¡ÌáÊ¾
+    int connection_id; //è¿”å›è¿æ¥id
+    int display_channels_hint; //æ˜¾ç¤ºé€šé“æç¤º
+    int current_mouse_mode; //å½“å‰é¼ æ ‡æ¨¡å¼
+    int is_client_mouse_allowed; //æ˜¯å¦å…è®¸å®¢æˆ·ç«¯é¼ æ ‡æ¨¡å¼
+    int multi_media_time; //åˆå§‹mmäº‹ä»¶
+    int ram_hint; //qxlæ˜¾å¡å†…å­˜ramå¤§å°æç¤º
 } InitPipeItem;
 
 typedef struct NamePipeItem {
@@ -146,23 +146,23 @@ typedef struct MultiMediaTimePipeItem {
 
 // MCC
 struct MainChannelClient {
-    RedChannelClient base; //RCC»ù´¡
-    uint32_t connection_id; //Á¬½Óid£¬Ã¿´ÎÁ¬½Óspice²»Ò»ÖÂ
-    uint32_t ping_id; //pingÏûÏ¢id, Ã¿´Î·¢ËÍping°ü¶¼×ÔÔö
-    uint32_t net_test_id; //ÍøÂç²âÊÔid
-    int net_test_stage; //µ±Ç°ÍøÂç²âÊÔµÄ½×¶Î
-    uint64_t latency; //ÍøÂç²âÊÔµÄÑÓÊ±
-    uint64_t bitrate_per_sec; //ÍøÂç²âÊÔµÃµ½µÄ´ø¿íÖµ
+    RedChannelClient base; //RCCåŸºç¡€
+    uint32_t connection_id; //è¿æ¥idï¼Œæ¯æ¬¡è¿æ¥spiceä¸ä¸€è‡´
+    uint32_t ping_id; //pingæ¶ˆæ¯id, æ¯æ¬¡å‘é€pingåŒ…éƒ½è‡ªå¢
+    uint32_t net_test_id; //ç½‘ç»œæµ‹è¯•id
+    int net_test_stage; //å½“å‰ç½‘ç»œæµ‹è¯•çš„é˜¶æ®µ
+    uint64_t latency; //ç½‘ç»œæµ‹è¯•çš„å»¶æ—¶
+    uint64_t bitrate_per_sec; //ç½‘ç»œæµ‹è¯•å¾—åˆ°çš„å¸¦å®½å€¼
 #ifdef RED_STATISTICS
     SpiceTimer *ping_timer;
     int ping_interval;
 #endif
-    int mig_wait_connect; //Ç¨ÒÆµÈ´ıÁ¬½Ó
-    int mig_connect_ok; //Ç¨ÒÆÁ¬½Ó³É¹¦
-    int mig_wait_prev_complete; //Ç¨ÒÆµÈ´ıÇ°Ò»¸öÁ¬½ÓÍê³É²Ù×÷
-    int mig_wait_prev_try_seamless; //ÎŞ·ìÇ¨ÒÆ
-    int init_sent; //ÊÇ·ñ·¢ËÍÁËinitÏûÏ¢
-    int seamless_mig_dst; //ÎŞ·ìÇ¨ÒÆÄ¿±ê
+    int mig_wait_connect; //è¿ç§»ç­‰å¾…è¿æ¥
+    int mig_connect_ok; //è¿ç§»è¿æ¥æˆåŠŸ
+    int mig_wait_prev_complete; //è¿ç§»ç­‰å¾…å‰ä¸€ä¸ªè¿æ¥å®Œæˆæ“ä½œ
+    int mig_wait_prev_try_seamless; //æ— ç¼è¿ç§»
+    int init_sent; //æ˜¯å¦å‘é€äº†initæ¶ˆæ¯
+    int seamless_mig_dst; //æ— ç¼è¿ç§»ç›®æ ‡
 };
 
 enum NetTestStage {
@@ -206,7 +206,7 @@ RedClient *main_channel_get_client_by_link_id(MainChannel *main_chan, uint32_t c
 
 static int main_channel_client_push_ping(MainChannelClient *mcc, int size);
 
-// Ö÷Í¨µÀ¿ªÊ¼ÍøÂç²âÊÔ
+// ä¸»é€šé“å¼€å§‹ç½‘ç»œæµ‹è¯•
 void main_channel_client_start_net_test(MainChannelClient *mcc, int test_rate)
 {
     if (!mcc || mcc->net_test_id) {
@@ -224,7 +224,7 @@ void main_channel_client_start_net_test(MainChannelClient *mcc, int test_rate)
     }
 }
 
-//´´½¨¸÷ÖÖÏûÏ¢¹ÜµÀÏî
+//åˆ›å»ºå„ç§æ¶ˆæ¯ç®¡é“é¡¹
 typedef struct MainMouseModeItemInfo {
     int current_mode;
     int is_client_mouse_allowed;
@@ -339,10 +339,10 @@ static PipeItem *main_multi_media_time_item_new(
     item->time = info->time;
     return &item->base;
 }
-//¸÷ÖÖÖ÷Í¨µÀ¹ÜµÀÏî´´½¨º¯Êı½áÊø
+//å„ç§ä¸»é€šé“ç®¡é“é¡¹åˆ›å»ºå‡½æ•°ç»“æŸ
 
 
-// ÍùmccÖĞÍÆËÍÒ»¸öÍ¨µÀÁĞ±í¹ÜµÀÏî
+// å¾€mccä¸­æ¨é€ä¸€ä¸ªé€šé“åˆ—è¡¨ç®¡é“é¡¹
 static void main_channel_push_channels(MainChannelClient *mcc)
 {
     if (red_client_during_migrate_at_target(mcc->base.client)) {
@@ -355,7 +355,7 @@ static void main_channel_push_channels(MainChannelClient *mcc)
 
 
 
-// µ÷ÖÆÖ÷Í¨µÀÍ¨µÀÁĞ±íÏûÏ¢
+// è°ƒåˆ¶ä¸»é€šé“é€šé“åˆ—è¡¨æ¶ˆæ¯
 static void main_channel_marshall_channels(RedChannelClient *rcc,
                                            SpiceMarshaller *m,
                                            PipeItem *item)
@@ -365,7 +365,7 @@ static void main_channel_marshall_channels(RedChannelClient *rcc,
     red_channel_client_init_send_data(rcc, SPICE_MSG_MAIN_CHANNELS_LIST, item);
     channels_info = (SpiceMsgChannels *)spice_malloc(sizeof(SpiceMsgChannels)
                             + reds_num_of_channels() * sizeof(SpiceChannelId));
-	//Ìî³äÍ¨µÀĞÅÏ¢
+	//å¡«å……é€šé“ä¿¡æ¯
     reds_fill_channels(channels_info);
     spice_marshall_msg_main_channels_list(m, channels_info);
     free(channels_info);
@@ -395,7 +395,7 @@ static void main_channel_marshall_ping(RedChannelClient *rcc,
     red_channel_client_init_send_data(rcc, SPICE_MSG_PING, &item->base);
     ping.id = ++(mcc->ping_id);
     clock_gettime(CLOCK_MONOTONIC, &time_space);
-	//Ö÷Í¨µÀµÄpingÏûÏ¢Ê±¼ä´Áµ¥Î»ÎªÎ¢Ãî
+	//ä¸»é€šé“çš„pingæ¶ˆæ¯æ—¶é—´æˆ³å•ä½ä¸ºå¾®å¦™
     ping.timestamp = time_space.tv_sec * 1000000LL + time_space.tv_nsec / 1000LL;
     spice_marshall_msg_ping(m, &ping);
 
@@ -425,8 +425,8 @@ static void main_channel_marshall_mouse_mode(RedChannelClient *rcc,
     SpiceMsgMainMouseMode mouse_mode;
 
     red_channel_client_init_send_data(rcc, SPICE_MSG_MAIN_MOUSE_MODE, &item->base);
-    mouse_mode.supported_modes = SPICE_MOUSE_MODE_SERVER; //Ä¬ÈÏÖ§³Ö·şÎñ¶ËÊó±êÄ£Ê½
-    if (item->is_client_mouse_allowed) { //ÔÊĞí¿Í»§¶ËÊó±êÄ£Ê½
+    mouse_mode.supported_modes = SPICE_MOUSE_MODE_SERVER; //é»˜è®¤æ”¯æŒæœåŠ¡ç«¯é¼ æ ‡æ¨¡å¼
+    if (item->is_client_mouse_allowed) { //å…è®¸å®¢æˆ·ç«¯é¼ æ ‡æ¨¡å¼
         mouse_mode.supported_modes |= SPICE_MOUSE_MODE_CLIENT;
     }
     mouse_mode.current_mode = item->current_mode;
@@ -568,7 +568,7 @@ static void main_channel_marshall_init(RedChannelClient *rcc,
         init.supported_mouse_modes |= SPICE_MOUSE_MODE_CLIENT;
     }
     init.agent_connected = reds_has_vdagent();
-    init.agent_tokens = REDS_AGENT_WINDOW_SIZE; //agent³õÊ¼ÁîÅÆ´óĞ¡
+    init.agent_tokens = REDS_AGENT_WINDOW_SIZE; //agentåˆå§‹ä»¤ç‰Œå¤§å°
     init.multi_media_time = item->multi_media_time; 
     init.ram_hint = item->ram_hint;
     spice_marshall_msg_main_init(m, &init);
@@ -743,7 +743,7 @@ static void main_channel_marshall_multi_media_time(RedChannelClient *rcc,
     spice_marshall_msg_main_multi_media_time(m, &time_mes);
 }
 
-// Ö÷Í¨µÀÏûÏ¢·¢ËÍº¯Êı
+// ä¸»é€šé“æ¶ˆæ¯å‘é€å‡½æ•°
 static void main_channel_send_item(RedChannelClient *rcc, PipeItem *base)
 {
     MainChannelClient *mcc = SPICE_CONTAINEROF(rcc, MainChannelClient, base);
@@ -915,7 +915,7 @@ void main_channel_migrate_dst_complete(MainChannelClient *mcc)
     }
 }
 
-// Ö÷Í¨µÀÏûÏ¢´¦Àíº¯Êı
+// ä¸»é€šé“æ¶ˆæ¯å¤„ç†å‡½æ•°
 static int main_channel_handle_parsed(RedChannelClient *rcc, uint32_t size, uint16_t type,
                                       void *message)
 {
@@ -945,7 +945,7 @@ static int main_channel_handle_parsed(RedChannelClient *rcc, uint32_t size, uint
         reds_on_main_agent_tokens(mcc, tokens->num_tokens);
         break;
     }
-	//·şÎñ¶ËÊÕµ½
+	//æœåŠ¡ç«¯æ”¶åˆ°
     case SPICE_MSGC_MAIN_ATTACH_CHANNELS:
         main_channel_push_channels(mcc);
         break;
@@ -1042,7 +1042,7 @@ static int main_channel_handle_parsed(RedChannelClient *rcc, uint32_t size, uint
     return TRUE;
 }
 
-// ·ÖÅäÖ÷Í¨µÀµÄÏûÏ¢½ÓÊÕ»º³åÇø
+// åˆ†é…ä¸»é€šé“çš„æ¶ˆæ¯æ¥æ”¶ç¼“å†²åŒº
 static uint8_t *main_channel_alloc_msg_rcv_buf(RedChannelClient *rcc,
                                                uint16_t type,
                                                uint32_t size)
@@ -1209,7 +1209,7 @@ static void main_channel_client_migrate(RedChannelClient *rcc)
     red_channel_client_default_migrate(rcc);
 }
 
-// Ö÷Í¨µÀ³õÊ¼»¯£¬ĞéÄâ»úÆô¶¯Ê±ÔËĞĞ
+// ä¸»é€šé“åˆå§‹åŒ–ï¼Œè™šæ‹Ÿæœºå¯åŠ¨æ—¶è¿è¡Œ
 MainChannel* main_channel_init(void)
 {
     RedChannel *channel;
